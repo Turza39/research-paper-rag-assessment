@@ -1,0 +1,96 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Project specific
+data/
+*.pdf
+logs/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Database
+*.sqlite3
+*.db
+
+# Vector DB data
+qdrant_data/
+mongodb_data/
+
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Environment variables
+.env
+.env.*
+!.env.example
