@@ -2,6 +2,7 @@
 Service for processing PDF files with intelligent chunking and metadata extraction.
 """
 import os
+from io import BytesIO
 import re
 import logging
 from typing import Dict, List, Tuple
@@ -38,44 +39,38 @@ class PDFProcessor:
     # -----------------------------------------------------------
     # 🧩 NEWLY RESTORED METHOD
     # -----------------------------------------------------------
-    def extract_text_from_pdf(self, file_path: str) -> Tuple[str, Dict[str, any]]:
-        """Extract raw text and metadata from a PDF file."""
-        with open(file_path, 'rb') as file:
-            pdf = PdfReader(file)
-            text = ""
-            metadata = {
-                'page_count': len(pdf.pages),
-                'file_name': os.path.basename(file_path),
-                'file_path': file_path,
-                'title': '',
-                'author': '',
-                'keywords': ''
-            }
+    def extract_text_from_bytes(self, pdf_bytes: bytes) -> tuple[str, dict]:
+        """Extract text and metadata from PDF bytes."""
+        pdf = PdfReader(BytesIO(pdf_bytes))
+        text = ""
+        metadata = {
+            "page_count": len(pdf.pages),
+            "title": "",
+            "author": "",
+            "keywords": "",
+        }
 
-            for i, page in enumerate(pdf.pages):
-                page_text = page.extract_text()
-                if page_text:
-                    text += f"\n## Page {i+1}\n\n{page_text}\n\n"
+        for i, page in enumerate(pdf.pages):
+            page_text = page.extract_text()
+            if page_text:
+                text += f"\n## Page {i+1}\n\n{page_text}\n\n"
 
-            # Extract PDF metadata
-            if pdf.metadata:
-                metadata.update({
-                    'title': pdf.metadata.get('/Title', '').strip(),
-                    'author': pdf.metadata.get('/Author', '').strip(),
-                    'keywords': pdf.metadata.get('/Keywords', '').strip()
-                })
+        # PDF metadata
+        if pdf.metadata:
+            metadata.update({
+                "title": pdf.metadata.get("/Title", "").strip(),
+                "author": pdf.metadata.get("/Author", "").strip(),
+                "keywords": pdf.metadata.get("/Keywords", "").strip(),
+            })
 
-            # Fallback to first page if metadata missing
-            if not metadata['title'] or not metadata['author']:
-                first_page_text = pdf.pages[0].extract_text() if pdf.pages else ""
-                lines = [line.strip() for line in first_page_text.splitlines() if line.strip()]
-                if not metadata['title'] and lines:
-                    metadata['title'] = lines[0]
-                if not metadata['author'] and len(lines) > 1:
-                    metadata['author'] = lines[1]
+        # fallback title from first page
+        if not metadata["title"] and pdf.pages:
+            first_page_text = pdf.pages[0].extract_text() or ""
+            lines = [line.strip() for line in first_page_text.splitlines() if line.strip()]
+            if lines:
+                metadata["title"] = lines[0]
 
         return text, metadata
-
     # -----------------------------------------------------------
     def create_chunks(self, text: str, file_metadata: Dict[str, any], max_chunk_size: int = 1000) -> List[Chunk]:
         """Create text chunks preserving section-level context."""
@@ -148,3 +143,5 @@ class PDFProcessor:
                 except Exception as e:
                     logger.error(f"Error processing {filename}: {str(e)}")
         return all_chunks
+
+

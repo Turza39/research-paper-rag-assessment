@@ -1,18 +1,12 @@
 """
-API routes for the Research Paper RAG system.
+Main router configuration.
 """
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter
+from .routes import query, papers, analytics
 
 router = APIRouter()
 
-@router.post("/papers/upload")
-async def upload_paper(file: UploadFile = File(...)):
-    """
-    Upload and process a research paper.
-    
-    - Extracts text with section awareness
-    - Generates embeddings
-    - Stores vectors in Qdrant
-    - Saves paper metadata
-    """
-    pass
+# Include all route modules
+router.include_router(query.router, tags=["query"])
+router.include_router(papers.router, tags=["papers"])
+router.include_router(analytics.router, tags=["analytics"])

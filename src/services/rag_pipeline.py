@@ -8,6 +8,8 @@ from src.services.pdf_processor import PDFProcessor
 from src.services.embedding_service import EmbeddingService
 from src.services.vector_store import VectorStore
 from src.models.api_models import QueryResponse, Citation
+from src.services.mongodb_service import MongoDBService
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -18,87 +20,81 @@ class RAGPipeline:
         self.pdf_processor = PDFProcessor()
         self.embedding_service = EmbeddingService()
         self.vector_store = VectorStore()
+        self.mongodb = MongoDBService()
     
     def process_directory(self, directory_path: str):
         """Process all PDFs in a directory and store their vectors."""
-        # Step 1: Process PDFs into chunks with rich metadata
         print("Processing PDFs and creating chunks...")
-        chunks = self.pdf_processor.process_directory(directory_path)
-        if not chunks:
-            print(f"No PDF files found in {directory_path}")
-            return
-            
-        # Step 2: Generate embeddings
-        print("Generating embeddings...")
-        vectors = self.embedding_service.get_embeddings(chunks)
-        
-        # Step 3: Store in vector store with metadata
-        print("Storing vectors and metadata...")
-        self.vector_store.store_vectors(chunks, vectors)
-        
-        print(f"Successfully processed {len(chunks)} chunks from directory: {directory_path}")
+        pdf_files = [
+            f for f in os.listdir(directory_path)
+            if f.lower().endswith(".pdf")
+        ]
+
+        for pdf_file in pdf_files:
+            file_path = os.path.join(directory_path, pdf_file)
+
+            # ✅ Step 1: Check if PDF already exists in MongoDB
+            if self.mongodb.paper_exists(pdf_file):
+                print(f"✅ Skipping '{pdf_file}' — already stored in MongoDB.")
+                continue
+
+            print(f"📄 Processing '{pdf_file}'...")
+
+            # ✅ Step 2: Extract text chunks from PDF
+            chunks = self.pdf_processor.process_pdf(file_path)
+            if not chunks:
+                print(f"⚠️ No text extracted from {pdf_file}")
+                continue
+
+            # ✅ Step 3: Generate embeddings
+            print(f"🔹 Generating embeddings for '{pdf_file}'...")
+            vectors = self.embedding_service.get_embeddings(chunks)
+
+            # ✅ Step 4: Store embeddings in vector database
+            print(f"💾 Storing vectors in vector store...")
+            self.vector_store.store_vectors(chunks, vectors)
+
+            # ✅ Step 5: Store metadata & chunks in MongoDB
+            print(f"📚 Saving '{pdf_file}' record in MongoDB...")
+            self.mongodb.save_pdf_record(pdf_file, chunks)
+
+            print(f"✅ Completed processing '{pdf_file}'.\n")
+
+        print("📚 All PDFs processed successfully.")
     
-    async def query(self, query_text: str, paper_filter: Optional[List[str]] = None, limit: int = 10) -> QueryResponse:
-        """
-        Query the RAG system and generate an answer.
-        Args:
-            query_text: The question to answer
-            paper_filter: Optional list of paper filenames to restrict search to
-            limit: Maximum number of chunks to retrieve
-        Returns:
-            QueryResponse with answer, citations, and metadata
-        """
-        try:
-            # Generate embedding for query
-            query_vector = self.embedding_service.get_embedding(query_text)
-            
-            # Search for similar chunks with paper filtering
-            results = self.vector_store.search_similar(
-                query_vector=query_vector,
-                paper_filter=paper_filter,
-                limit=limit
-            )
-            
-            if not results:
-                return QueryResponse(
-                    answer="No relevant information found in the specified papers.",
-                    citations=[],
-                    sources_used=[],
-                    confidence=0.0
-                )
-            
-            # Generate answer using Gemini
-            answer = await self.embedding_service.generate_answer(query_text, results)
-            
-            # Create citations from results
-            citations = []
-            sources_used = set()
-            
-            for result in results:
-                metadata = result["metadata"]
-                paper_title = metadata.get("title", "Unknown")
-                sources_used.add(metadata.get("file_name", ""))
-                
-                citations.append(Citation(
-                    paper_title=paper_title,
-                    section=metadata.get("section", "Unknown"),
-                    page=metadata.get("page", 1),
-                    relevance_score=float(result["score"])
-                ))
-            
-            # Calculate overall confidence based on top citation scores
-            confidence = max(min(sum(r["score"] for r in results[:3]) / 3, 1.0), 0.0) if results else 0.0
-            
+    async def query(self, query_text: str, paper_filter: Optional[List[str]] = None, limit: int = 20) -> QueryResponse:
+        # 1. Generate embedding
+        query_vector = self.embedding_service.get_embedding(query_text)
+        
+        # 2. Retrieve top-k chunks
+        results = self.vector_store.search_similar(
+            query_vector=query_vector,
+            paper_filter=paper_filter,
+            limit=limit
+        )
+        
+        if not results:
             return QueryResponse(
-                answer=answer,
-                citations=citations,
-                sources_used=list(sources_used),
-                confidence=confidence
+                answer="No relevant information found.",
+                citations=[],
+                sources_used=[],
+                confidence=0.0
             )
-            
-        except Exception as e:
-            logger.error(f"Error in query processing: {str(e)}")
-            raise
+        
+        # 3. Generate answer with structured JSON
+        json_response = await self.embedding_service.generate_answer(query_text, results)
+        
+        # 4. Convert JSON into QueryResponse Pydantic model
+        citations = [
+            Citation(**c) for c in json_response.get("citations", [])
+        ]
+        
+        return QueryResponse(
+            answer=json_response.get("answer", ""),
+            citations=citations,
+            sources_used=json_response.get("sources_used", []),
+            confidence=json_response.get("confidence", 0.0)
+        )
 
 # Example usage
 if __name__ == "__main__":

@@ -33,15 +33,27 @@ class QueryResponse(BaseModel):
     sources_used: List[str]
     confidence: float
 
+# class Paper(BaseModel):
+#     """Main paper model with metadata and sections."""
+#     title: str
+#     authors: List[str]
+#     year: Optional[int]
+#     abstract: str
+#     sections: Dict[str, Section]
+#     file_path: str
+#     page_count: int
+#     processed_date: datetime = Field(default_factory=datetime.utcnow)
+#     vector_count: int = 0
+#     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class Paper(BaseModel):
-    """Main paper model with metadata and sections."""
-    title: str
-    authors: List[str]
-    year: Optional[int]
-    abstract: str
-    sections: Dict[str, Section]
-    file_path: str
+    id: str = Field(..., alias="_id")
+    file_name: str
     page_count: int
-    processed_date: datetime = Field(default_factory=datetime.utcnow)
-    vector_count: int = 0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    vector_count: int
+    metadata: Dict[str, Any] = {}
+
+    model_config = {
+        "populate_by_name": True  # allows using 'id' in code but '_id' in data
+    }

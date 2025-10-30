@@ -7,6 +7,13 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 from src.models.paper import Chunk
+import json
+from typing import List, Dict, Any
+from src.models.paper import Chunk
+import google.generativeai as genai
+import os
+import re
+
 
 # Load environment variables
 load_dotenv()
@@ -35,36 +42,75 @@ class EmbeddingService:
         """Generate embedding for a single text."""
         return self.get_embeddings([text])[0]
 
-    async def generate_answer(self, query: str, relevant_chunks: List[Dict[str, any]]) -> str:
+    async def generate_answer(self, query: str, relevant_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Generate an answer using Gemini based on relevant chunks.
-
-        Option 2: Safely handle missing 'source' key in chunk metadata.
+        Generate answer using Gemini and return structured JSON including only used chunks as citations.
         """
-        # Prepare context from relevant chunks
+        # Prepare context string
         context = "\n\n".join([
             f"[From {chunk.get('metadata', {}).get('source', 'unknown')}, "
-            f"Section: {chunk.get('metadata', {}).get('section', 'unknown')}]\n"
+            f"Section: {chunk.get('metadata', {}).get('section', 'unknown')}, "
+            f"Page: {chunk.get('metadata', {}).get('page', 1)}]\n"
             f"{chunk.get('text', '')}"
             for chunk in relevant_chunks
         ])
-        
-        # Construct prompt
-        prompt = f"""As a research assistant, please answer the following question based on the provided paper excerpts. 
-Include only information that is supported by the given context. You can answer in moderate details.
 
-Context from research papers:
-{context}
+        # Construct prompt for JSON
+        prompt = f"""
+    You are a research assistant. Answer the question using ONLY the provided context. 
+    Return your output strictly as a JSON object in the following format:
 
-Question: {query}
+    {{
+        "answer": "...",                 
+        "citations": [
+            {{
+                "paper_title": "...", ** give paper title, not file name
+                "section": "...",
+                "page": 1,
+                "relevance_score": 0.0
+            }}
+        ],
+        "sources_used": ["..."],          
+        "confidence": 0.0
+    }}
 
-Please provide a clear answer that:
-1. Addresses the question
-2. Uses information only from the provided context
-3. Cites specific papers/sections when appropriate
-4. Acknowledges if information is incomplete or unclear
-"""
+    Context chunks:
+    {context}
 
-        # Generate response
+    Question: {query}
+
+    Instructions:
+    1. Only use information from the context.
+    2. Include a citation only if you used that chunk to generate your answer.
+    3. Provide relevance_score for each citation (0-1).
+    4. List sources_used as the unique filenames you referenced.
+    5. Provide an overall confidence score (0-1).
+    6. No need to be too much strict about the relavancy. 
+    """
+
+        # Call Gemini
         response = self.gemini.generate_content(prompt)
-        return response.text
+
+        # Strip Markdown code block if present
+        text = response.text
+        text = re.sub(r"^```json\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+
+        # Parse JSON safely
+        try:
+            json_output = json.loads(text)
+        except Exception:
+            json_output = {
+                "answer": text,
+                "citations": [],
+                "sources_used": list({chunk.get("metadata", {}).get("file_name", "unknown") 
+                                    for chunk in relevant_chunks}),
+                "confidence": 0.0
+            }
+
+        # Ensure sources_used is always set
+        if "sources_used" not in json_output or not json_output["sources_used"]:
+            json_output["sources_used"] = list({chunk.get("metadata", {}).get("file_name", "unknown") 
+                                            for chunk in relevant_chunks})
+
+        return json_output
+    
