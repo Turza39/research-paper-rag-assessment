@@ -3,7 +3,7 @@ Service for managing vector storage using Qdrant.
 Requires Qdrant running in Docker: docker run -p 6333:6333 qdrant/qdrant
 """
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
 from src.models.paper import Chunk, Section
@@ -80,18 +80,29 @@ class VectorStore:
         
         return vector_ids
 
-    def search_similar(self, query_vector: List[float], limit: int = 10) -> List[Dict[str, Any]]:
+    def search_similar(self, query_vector: List[float], paper_filter: Optional[List[str]] = None, limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Search for similar vectors in Qdrant.
+        Search for similar vectors in Qdrant with optional paper filtering.
         :param query_vector: Vector embedding of the query
+        :param paper_filter: Optional list of paper filenames to filter results
         :param limit: Number of results to return
         :return: List of dictionaries with text, metadata, and score
         """
-        results = self.client.search(
-            collection_name=self.collection_name,
-            query_vector=query_vector,
-            limit=limit
-        )
+        search_params = {
+            "collection_name": self.collection_name,
+            "query_vector": query_vector,
+            "limit": limit
+        }
+
+        if paper_filter:
+            search_params["query_filter"] = {
+                "should": [
+                    {"key": "file_name", "match": {"value": paper_name}}
+                    for paper_name in paper_filter
+                ]
+            }
+
+        results = self.client.search(**search_params)
         
         return [
             {

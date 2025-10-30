@@ -51,15 +51,15 @@ class EmbeddingService:
         
         # Construct prompt
         prompt = f"""As a research assistant, please answer the following question based on the provided paper excerpts. 
-Include only information that is directly supported by the given context.
+Include only information that is supported by the given context. You can answer in moderate details.
 
 Context from research papers:
 {context}
 
 Question: {query}
 
-Please provide a clear, concise answer that:
-1. Directly addresses the question
+Please provide a clear answer that:
+1. Addresses the question
 2. Uses information only from the provided context
 3. Cites specific papers/sections when appropriate
 4. Acknowledges if information is incomplete or unclear
