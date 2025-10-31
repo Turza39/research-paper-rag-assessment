@@ -62,40 +62,66 @@ class RAGPipeline:
 
         print("📚 All PDFs processed successfully.")
     
-    async def query(self, query_text: str, paper_filter: Optional[List[str]] = None, limit: int = 20) -> QueryResponse:
+    async def query(
+        self,
+        query_text: str,
+        paper_filter: Optional[List[str]] = None,
+        limit: int = 20
+    ) -> QueryResponse:
+        logger.info(f"🧠 Query received: '{query_text}' | filter={paper_filter}")
+
         # 1. Generate embedding
         query_vector = self.embedding_service.get_embedding(query_text)
-        
+        logger.debug(f"Generated query vector of length {len(query_vector)}")
+
         # 2. Retrieve top-k chunks
         results = self.vector_store.search_similar(
             query_vector=query_vector,
             paper_filter=paper_filter,
             limit=limit
         )
-        
+
         if not results:
+            logger.warning("⚠️ No results found in Qdrant for the query.")
             return QueryResponse(
                 answer="No relevant information found.",
                 citations=[],
                 sources_used=[],
                 confidence=0.0
             )
-        
+
+        logger.info(f"✅ Retrieved {len(results)} candidate chunks")
+
         # 3. Generate answer with structured JSON
         json_response = await self.embedding_service.generate_answer(query_text, results)
-        
+        logger.debug(f"🧾 Gemini response: {json_response}")
+
         # 4. Convert JSON into QueryResponse Pydantic model
-        citations = [
-            Citation(**c) for c in json_response.get("citations", [])
-        ]
-        
-        return QueryResponse(
+        citations = [Citation(**c) for c in json_response.get("citations", [])]
+
+        response = QueryResponse(
             answer=json_response.get("answer", ""),
             citations=citations,
             sources_used=json_response.get("sources_used", []),
             confidence=json_response.get("confidence", 0.0)
         )
 
+        # 5. ✅ Update paper stats for each paper referenced
+        for paper_file in response.sources_used:
+            try:
+                await self.mongodb.update_paper_stats(
+                    paper_id=paper_file,
+                    query_data={
+                        "citations": [c.dict() for c in citations if c.paper_title == paper_file],
+                        "response_time": 0.0,  # optionally measure
+                        "success": True,
+                        "query_text": query_text
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to update stats for {paper_file}: {e}")
+
+        return response
 # Example usage
 if __name__ == "__main__":
     import asyncio

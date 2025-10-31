@@ -153,18 +153,17 @@ class MongoDBService:
             raise
 
     async def get_paper_stats(self, paper_id: str) -> Dict:
-        stats = await self.paper_stats.find_one({"paper_id": paper_id}) or {
-            "paper_id": paper_id,
-            "total_queries": 0,
-            "avg_relevance_score": 0.0,
-            "total_citations": 0,
-            "last_queried": None
-        }
+        stats = await self.paper_stats.find_one({"paper_id": paper_id}) or {}
         recent_queries = await self.queries.find(
             {"papers_referenced": paper_id}
         ).sort("timestamp", -1).limit(5).to_list(length=None)
-        stats["recent_queries"] = recent_queries
-        return stats
+
+        return {
+            "total_queries": stats.get("total_queries", 0),
+            "avg_relevance_score": stats.get("avg_relevance_score", 0.0),
+            "total_citations": stats.get("total_citations", 0),
+            "last_queried": stats.get("last_queried", None),
+        }
 
     async def update_paper_stats(self, paper_id: str, query_data: Dict):
         update = {
@@ -175,12 +174,6 @@ class MongoDBService:
             "$set": {
                 "last_queried": datetime.now(timezone.utc)
             },
-            "$push": {
-                "recent_queries": {
-                    "$each": [query_data],
-                    "$slice": -5
-                }
-            }
         }
 
         await self.paper_stats.update_one(
@@ -193,26 +186,38 @@ class MongoDBService:
     async def get_popular_topics(self, days: int = 30, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Return the most queried topics in the last `days` days.
-        Aggregates by query text or tags in your queries collection.
+        Aggregates by question text, with average response time and success rate.
         """
         since = datetime.now(timezone.utc) - timedelta(days=days)
-        
+
         pipeline = [
             {"$match": {"timestamp": {"$gte": since}}},
-            {"$group": {"_id": "$query_text", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
+            {
+                "$group": {
+                    "_id": "$question",  # use the correct field
+                    "query_count": {"$sum": 1},
+                    "avg_response_time": {"$avg": "$response_time"},
+                    "success_rate": {"$avg": {"$cond": ["$success", 1, 0]}},
+                    "last_queried": {"$max": "$timestamp"}
+                }
+            },
+            {"$sort": {"query_count": -1}},
             {"$limit": limit}
         ]
-        
+
         cursor = self.queries.aggregate(pipeline)
         results = []
+
         async for doc in cursor:
             results.append({
-                "topic": doc["_id"],
-                "count": doc["count"]
+                "topic": doc["_id"] if doc["_id"] is not None else "unknown",
+                "query_count": doc.get("query_count", 0),
+                "avg_response_time": doc.get("avg_response_time", 0.0),
+                "success_rate": doc.get("success_rate", 0.0),
+                "last_queried": doc.get("last_queried", datetime.now(timezone.utc))
             })
-        return results
 
+        return results
 
 mongodb_instance = MongoDBService()
 

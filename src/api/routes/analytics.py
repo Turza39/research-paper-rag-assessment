@@ -25,6 +25,12 @@ async def get_query_history(
     """Get recent query history."""
     try:
         history = await mongodb.get_query_history(limit=limit)
+
+        # Convert ObjectId to string
+        for query in history:
+            if "_id" in query:
+                query["_id"] = str(query["_id"])
+
         return [QueryHistory(**query) for query in history]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

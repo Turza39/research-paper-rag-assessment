@@ -31,35 +31,44 @@ async def upload_paper(
         pdf_processor = PDFProcessor()
         text, metadata = pdf_processor.extract_text_from_bytes(pdf_bytes)
 
-        # Create chunks
-        chunks = pdf_processor.create_chunks(text, metadata)
+        # ✅ Create chunks with UUID-based vector IDs
+        chunks = pdf_processor.create_chunks(
+            text,
+            {**metadata, "file_name": file_name}  # ensure 'file_name' is present
+        )
 
         # Build Paper object
         paper = Paper(
-            id=file_name,  # file_name as unique id
+            id=file_name,
             file_name=file_name,
             page_count=metadata.get("page_count", 0),
             vector_count=len(chunks),
             metadata={
                 "title": metadata.get("title", file_name),
-                "initial_content": text[:500]  # first 500 chars
+                "initial_content": text[:500],
+                "file_name": file_name
             }
         )
 
-        # Store in MongoDB
+        # Store paper info in MongoDB
         paper_id = await mongodb.store_paper(paper, pdf_bytes=pdf_bytes)
 
-        # Generate embeddings and store vectors if chunks exist
         if chunks:
             # Initialize embedding service
             embedding_service = EmbeddingService()
             vectors = embedding_service.get_embeddings(chunks)
 
-            # Prepare chunk documents for MongoDB
+            # ✅ Keep the same UUIDs for MongoDB and Qdrant
             chunk_docs = [
-                {"text": c.text, "metadata": c.metadata, "vector_id": str(i)}
-                for i, c in enumerate(chunks)
+                {
+                    "text": c.text,
+                    "metadata": c.metadata,
+                    "vector_id": c.metadata["vector_id"],  # use UUID from chunk
+                }
+                for c in chunks
             ]
+
+            # Store chunks in MongoDB
             await mongodb.store_chunks_bulk(paper_id, chunk_docs)
 
             # Initialize vector store
@@ -72,7 +81,6 @@ async def upload_paper(
     except Exception as e:
         logger.error(f"Error uploading paper: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ----------------- List Papers -----------------
 @router.get("/papers", response_model=List[Paper])

@@ -1,7 +1,7 @@
 """
 Service for processing PDF files with intelligent chunking and metadata extraction.
 """
-import os
+import os, uuid
 from io import BytesIO
 import re
 import logging
@@ -73,9 +73,13 @@ class PDFProcessor:
         return text, metadata
     # -----------------------------------------------------------
     def create_chunks(self, text: str, file_metadata: Dict[str, any], max_chunk_size: int = 1000) -> List[Chunk]:
-        """Create text chunks preserving section-level context."""
+        """Create text chunks preserving section-level context, with globally unique IDs."""
+        import uuid
         text_chunks = []
-        file_metadata = {**file_metadata, 'source': file_metadata.get('file_name', 'unknown')}
+
+        # Ensure both 'source' and 'file_name' exist
+        file_name = file_metadata.get("file_name", "unknown")
+        file_metadata = {**file_metadata, 'source': file_name, 'file_name': file_name}
 
         # 1. Handle special sections
         special_sections = {}
@@ -88,36 +92,60 @@ class PDFProcessor:
 
         for section_name, section_text in special_sections.items():
             if section_text.strip():
+                unique_id = str(uuid.uuid4())
                 text_chunks.append(Chunk(
                     text=section_text.strip(),
-                    metadata={**file_metadata, 'section': section_name, 'chunk_index': len(text_chunks)}
+                    metadata={
+                        **file_metadata,
+                        'section': section_name,
+                        'chunk_index': len(text_chunks),
+                        'vector_id': unique_id
+                    }
                 ))
 
         # 2. Abstract detection
         abstract_match = re.search(r'Abstract[:\s]*(.+?)(?=\n##|\Z)', text, re.IGNORECASE | re.DOTALL)
         if abstract_match:
             abstract_text = abstract_match.group(1).strip()
+            unique_id = str(uuid.uuid4())
             text_chunks.append(Chunk(
                 text=abstract_text,
-                metadata={**file_metadata, 'section': 'Abstract', 'chunk_index': len(text_chunks)}
+                metadata={
+                    **file_metadata,
+                    'section': 'Abstract',
+                    'chunk_index': len(text_chunks),
+                    'vector_id': unique_id
+                }
             ))
 
         # 3. Paragraph-based chunking
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         for para in paragraphs:
             if len(para) <= max_chunk_size:
+                unique_id = str(uuid.uuid4())
                 text_chunks.append(Chunk(
                     text=para,
-                    metadata={**file_metadata, 'section': 'Paragraph', 'chunk_index': len(text_chunks)}
+                    metadata={
+                        **file_metadata,
+                        'section': 'Paragraph',
+                        'chunk_index': len(text_chunks),
+                        'vector_id': unique_id
+                    }
                 ))
             else:
                 start = 0
                 while start < len(para):
                     end = min(start + max_chunk_size, len(para))
                     chunk_text = para[start:end].strip()
+                    unique_id = str(uuid.uuid4())
                     text_chunks.append(Chunk(
                         text=chunk_text,
-                        metadata={**file_metadata, 'section': 'Paragraph', 'chunk_index': len(text_chunks)}
+                        metadata={
+                            **file_metadata,
+                            'section': 'Paragraph',
+                            'chunk_index': len(text_chunks),
+                            'vector_id': unique_id
+                        }
                     ))
                     start += max_chunk_size
 

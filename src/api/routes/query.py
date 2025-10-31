@@ -28,26 +28,46 @@ async def query_papers(
     pipeline: Annotated[RAGPipeline, Depends(get_rag_pipeline)]
 ):
     """
-    Process a query against research papers.
-    
-    Parameters:
-        query_request: QueryRequest model containing question and context
-        pipeline: RAG pipeline instance (injected)
-        
-    Returns:
-        QueryResponse with answer, citations, and confidence score
+    Process a query against research papers and log it to MongoDB.
     """
+    from time import time
+    from src.services.mongodb_service import get_mongodb
+    
+    mongodb = await get_mongodb()
+    
+    start_time = time()
     try:
-        # Process query through RAG pipeline with paper filtering
+        # Process query through RAG pipeline
         response = await pipeline.query(
             query_text=query_request.question,
             paper_filter=query_request.expected_papers
         )
-        
+        response_time = time() - start_time
+
+        # Store query history in MongoDB
+        await mongodb.store_query({
+            "question": query_request.question,
+            "papers_referenced": [c.metadata.get("file_name", "unknown") for c in getattr(response, "citations", [])],
+            "response_time": response_time,
+            "query_type": "rag",
+            "difficulty": "medium",
+            "success": True
+        })
+
         return response
-        
+
     except Exception as e:
-        # Log the error here
+        response_time = time() - start_time
+        # Log failed query
+        await mongodb.store_query({
+            "question": query_request.question,
+            "papers_referenced": [],
+            "response_time": response_time,
+            "query_type": "rag",
+            "difficulty": "medium",
+            "success": False,
+            "error_message": str(e)
+        })
         raise HTTPException(
             status_code=500,
             detail=f"Error processing query: {str(e)}"
