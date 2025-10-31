@@ -47,14 +47,14 @@ async def query_papers(
         # Store query history in MongoDB
         await mongodb.store_query({
             "question": query_request.question,
-            "papers_referenced": [c.metadata.get("file_name", "unknown") for c in getattr(response, "citations", [])],
+            "papers_referenced": response.sources_used,  # ✅ Attribute access
             "response_time": response_time,
-            "query_type": "rag",
-            "difficulty": "medium",
+            "query_type": query_request.type.value,
+            "difficulty": query_request.difficulty.value,
             "success": True
         })
 
-        return response
+        return response  # ✅ Already a QueryResponse object
 
     except Exception as e:
         response_time = time() - start_time
@@ -63,8 +63,8 @@ async def query_papers(
             "question": query_request.question,
             "papers_referenced": [],
             "response_time": response_time,
-            "query_type": "rag",
-            "difficulty": "medium",
+            "query_type": query_request.type.value,
+            "difficulty": query_request.difficulty.value,
             "success": False,
             "error_message": str(e)
         })
@@ -72,4 +72,3 @@ async def query_papers(
             status_code=500,
             detail=f"Error processing query: {str(e)}"
         )
-

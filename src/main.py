@@ -2,6 +2,7 @@
 Main FastAPI application entry point.
 """
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # ADD THIS
 from contextlib import asynccontextmanager
 import os
 from src.services.rag_pipeline import RAGPipeline
@@ -37,6 +38,19 @@ app = FastAPI(
     """,
     version="1.0.0",
     lifespan=lifespan
+)
+
+# ----------------- ADD CORS MIDDLEWARE -----------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ----------------- Include Routers -----------------

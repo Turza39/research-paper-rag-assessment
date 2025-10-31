@@ -124,15 +124,59 @@ async def delete_paper(
 
 
 # ----------------- Get Paper Stats -----------------
-@router.get("/papers/{paper_id}/stats", response_model=PaperStats)
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+# Add this model if you don't have it
+class PaperStatsResponse(BaseModel):
+    total_queries: int
+    avg_relevance_score: float
+    total_citations: int
+    last_queried: Optional[datetime]
+
+@router.get("/papers/{paper_id}/stats")
 async def get_paper_stats(
     paper_id: str,
     mongodb: MongoDBService = Depends(get_mongodb)
 ):
+    """Get paper stats and a Gemini summary."""
     try:
         stats = await mongodb.get_paper_stats(paper_id)
-        if not stats:
-            raise HTTPException(status_code=404, detail="Paper stats not found")
-        return PaperStats(**stats)
+        
+        if not stats or stats.get("total_queries", 0) == 0:
+            raise HTTPException(
+                status_code=404, 
+                detail="No statistics available for this paper yet"
+            )
+
+        # ---- Gemini Summarization ----
+        import os, google.generativeai as genai
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+        stats_text = f"""
+Paper Statistics:
+- Total Queries: {stats.get('total_queries', 0)}
+- Total Citations: {stats.get('total_citations', 0)}
+- Average Relevance Score: {stats.get('avg_relevance_score', 0):.2f}
+- Last Queried: {stats.get('last_queried', 'Never')}
+"""
+
+        prompt = (
+            "Summarize these paper statistics in 2-3 sentences for a user-friendly overview. "
+            "Focus on usage patterns and engagement:\n\n" + stats_text
+        )
+
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        gemini_response = model.generate_content(prompt)
+        summary = gemini_response.text.strip() if hasattr(gemini_response, "text") else "No summary available."
+
+        return {
+            "stats": stats,
+            "summary": summary
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

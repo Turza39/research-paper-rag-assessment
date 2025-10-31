@@ -35,15 +35,41 @@ async def get_query_history(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/analytics/popular", response_model=List[PopularTopic])
+@router.get("/analytics/popular")
 async def get_popular_topics(
     mongodb: MongoDBService = Depends(get_mongodb),
     days: int = 30,
     limit: int = 10
 ):
-    """Get most queried topics with analytics."""
+    """Get most queried topics with a Gemini-generated summary."""
     try:
         topics = await mongodb.get_popular_topics(days=days, limit=limit)
-        return [PopularTopic(**topic) for topic in topics]
+        topic_models = [PopularTopic(**topic) for topic in topics]
+
+        # ---- Gemini Summarization ----
+        import os, google.generativeai as genai
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+        topics_text = "\n".join([
+            f"Question: '{t.topic}' - {t.query_count} queries, "
+            f"{t.success_rate*100:.1f}% success rate, "
+            f"avg response time: {t.avg_response_time:.2f}s"
+            for t in topic_models
+        ])
+        
+        prompt = (
+            "Summarize the following query analytics in 2-3 sentences, "
+            "highlighting the most popular questions and key trends:\n\n" + topics_text
+        )
+
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        gemini_response = model.generate_content(prompt)
+        summary = gemini_response.text.strip() if hasattr(gemini_response, "text") else "No summary available."
+
+        return {
+            "topics": [t.dict() for t in topic_models],
+            "summary": summary
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
