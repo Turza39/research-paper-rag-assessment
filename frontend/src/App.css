@@ -180,6 +180,7 @@ body {
         opacity: 0;
         transform: translateY(-10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -236,8 +237,10 @@ body {
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    background: rgba(139, 92, 246, 0.1);  /* Light purple background */
-    border: 1px solid rgba(139, 92, 246, 0.3);  /* Purple border */
+    background: rgba(139, 92, 246, 0.1);
+    /* Light purple background */
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    /* Purple border */
     border-radius: 6px;
     font-size: 12px;
     color: var(--text-primary);
@@ -371,6 +374,7 @@ body {
         opacity: 0;
         transform: translate(-50%, calc(-100% - 5px));
     }
+
     to {
         opacity: 1;
         transform: translate(-50%, calc(-100% - 10px));
@@ -514,6 +518,7 @@ body {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -885,12 +890,12 @@ body {
     .app-container {
         grid-template-columns: 260px 1fr 300px;
     }
-    
+
     .left-sidebar,
     .right-sidebar {
         padding: 16px;
     }
-    
+
     .analytics-panel {
         padding: 16px;
     }
@@ -900,7 +905,7 @@ body {
     .app-container {
         grid-template-columns: 260px 1fr;
     }
-    
+
     .right-sidebar {
         display: none;
     }
@@ -910,7 +915,7 @@ body {
     .app-container {
         grid-template-columns: 1fr;
     }
-    
+
     .left-sidebar {
         position: fixed;
         left: -100%;
@@ -921,15 +926,15 @@ body {
         transition: left 0.3s ease;
         box-shadow: var(--shadow-lg);
     }
-    
+
     .left-sidebar.open {
         left: 0;
     }
-    
+
     .main-content {
         grid-column: 1;
     }
-    
+
     .message {
         max-width: 90%;
     }
@@ -949,25 +954,25 @@ body {
         --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
         --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
     }
-    
+
     .message.user .message-content {
         background: var(--accent-purple);
     }
-    
+
     .message.assistant .message-content {
         background: var(--card-bg);
         border-color: var(--border);
     }
-    
+
     .chat-input {
         background: var(--bg-secondary);
         color: var(--text-primary);
     }
-    
+
     .paper-item {
         background: var(--bg-secondary);
     }
-    
+
     .paper-item:hover {
         background: rgba(139, 92, 246, 0.1);
     }
@@ -978,26 +983,60 @@ body {
     text-align: center;
 }
 
-.mt-1 { margin-top: 4px; }
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 12px; }
-.mt-4 { margin-top: 16px; }
+.mt-1 {
+    margin-top: 4px;
+}
 
-.mb-1 { margin-bottom: 4px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 12px; }
-.mb-4 { margin-bottom: 16px; }
+.mt-2 {
+    margin-top: 8px;
+}
 
-.p-1 { padding: 4px; }
-.p-2 { padding: 8px; }
-.p-3 { padding: 12px; }
-.p-4 { padding: 16px; }
+.mt-3 {
+    margin-top: 12px;
+}
+
+.mt-4 {
+    margin-top: 16px;
+}
+
+.mb-1 {
+    margin-bottom: 4px;
+}
+
+.mb-2 {
+    margin-bottom: 8px;
+}
+
+.mb-3 {
+    margin-bottom: 12px;
+}
+
+.mb-4 {
+    margin-bottom: 16px;
+}
+
+.p-1 {
+    padding: 4px;
+}
+
+.p-2 {
+    padding: 8px;
+}
+
+.p-3 {
+    padding: 12px;
+}
+
+.p-4 {
+    padding: 16px;
+}
 
 /* ==================== Animations ==================== */
 @keyframes fadeIn {
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -1008,6 +1047,7 @@ body {
         transform: translateY(10px);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -1015,9 +1055,12 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.5;
     }
@@ -1025,16 +1068,17 @@ body {
 
 /* ==================== Print Styles ==================== */
 @media print {
+
     .sidebar,
     .input-section,
     .main-header {
         display: none;
     }
-    
+
     .main-content {
         grid-column: 1 / -1;
     }
-    
+
     .messages-container {
         overflow: visible;
         height: auto;

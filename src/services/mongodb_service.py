@@ -2,7 +2,7 @@
 MongoDB service for paper storage, retrieval, and chunk management.
 Compatible with simplified Paper schema.
 """
-import logging
+import logging, os
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,12 +11,12 @@ from src.models.paper import Paper
 
 logger = logging.getLogger(__name__)
 
-
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
 class MongoDBService:
-    def __init__(self, connection_string: str = "mongodb://localhost:27017"):
+    def __init__(self):
         """Initialize MongoDB connection."""
-        self.client = AsyncIOMotorClient(connection_string)
+        self.client = AsyncIOMotorClient(MONGODB_URL)
         self.db = self.client.research_papers
         self.papers = self.db.papers
         self.chunks = self.db.chunks

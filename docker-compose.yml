@@ -1,58 +1,75 @@
 services:
-  # FastAPI Application
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+  mongodb:
+    image: mongo:latest
+    container_name: research-mongodb
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - qdrant
-      - mongodb
-    networks:
-      - rag-network
+      - "27017:27017"
     environment:
-      - MONGODB_URL=mongodb://mongodb:27017
-      - QDRANT_URL=http://qdrant:6333
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
 
-  # Qdrant Vector Database
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:latest
+    container_name: research-qdrant
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - rag-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - app-network
+    # No health check - simpler
 
-  # MongoDB Database
-  mongodb:
-    image: mongo:latest
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research-backend
     ports:
-      - "27017:27017"
+      - "8000:8000"
     volumes:
-      - mongodb_data:/data/db
-    networks:
-      - rag-network
+      - ./:/app
+      - ./data:/app/data
+      - ./sample_papers:/app/sample_papers
     environment:
-      - MONGO_INITDB_DATABASE=rag_papers
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - PYTHONPATH=/app
+      - MONGODB_URL=mongodb://admin:password123@research-mongodb:27017
+      - QDRANT_HOST=research-qdrant
+      - QDRANT_PORT=6333
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - mongodb
+      - qdrant
+    networks:
+      - app-network
+    restart: on-failure  # Will retry if Qdrant isn't ready yet
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: research-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000/api/v1
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    stdin_open: true
 
 networks:
-  rag-network:
+  app-network:
     driver: bridge
 
 volumes:
-  qdrant_data:
   mongodb_data:
+  qdrant_data:

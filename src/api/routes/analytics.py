@@ -58,7 +58,7 @@ async def get_popular_topics(
         ])
         
         prompt = (
-            "Summarize the following query analytics in 2-3 sentences, "
+            "Summarize the following query analytics in 2-3 sentences, do not say anything outside the provided context. if no context is provided, simply say No insights found. Try asking something!"
             "highlighting the most popular questions and key trends:\n\n" + topics_text
         )
 

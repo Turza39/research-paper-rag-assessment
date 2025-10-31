@@ -1,9 +1,0 @@
-google-generativeai
-langchain-community
-nltk
-PyPDF2
-sentence-transformers
-langchain-core 
-langchain-google-genai 
-pydantic==1.10.13
-qdrant-client

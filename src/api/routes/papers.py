@@ -163,7 +163,7 @@ Paper Statistics:
 """
 
         prompt = (
-            "Summarize these paper statistics in 2-3 sentences for a user-friendly overview. "
+            "Summarize these paper statistics in 2-3 sentences for a user-friendly overview. do not say anything outside the provided context. if no context is provided, simply say No insights found. Try asking something!"
             "Focus on usage patterns and engagement:\n\n" + stats_text
         )
 

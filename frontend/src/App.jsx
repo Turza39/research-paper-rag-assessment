@@ -611,9 +611,9 @@ function App() {
             {/* Right Sidebar - Analytics */}
             <aside className="sidebar right-sidebar">
                 <div className="analytics-panel">
-                    <h2>📊 Analytics</h2>
+                    {/* <h2>📊 Analytics</h2>
 
-                    {/* Analytics Summary */}
+                    Analytics Summary
                     {popularTopicsSummary && (
                         <div className="analytics-section">
                             <h3>💡 Insights</h3>
@@ -621,7 +621,7 @@ function App() {
                                 <p>{popularTopicsSummary}</p>
                             </div>
                         </div>
-                    )}
+                    )} */}
 
                     {/* Popular Questions */}
                     {popularPapers.length > 0 && (
