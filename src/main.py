@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  # ADD THIS
 from contextlib import asynccontextmanager
 import os
+from src.api.routes import papers, query, research_chat
 from src.services.rag_pipeline import RAGPipeline
 
 # ----------------- Lifespan -----------------
@@ -58,6 +59,6 @@ from src.api.routes.query import router as query_router
 from src.api.routes.analytics import router as history_router
 from src.api.routes.papers import router as papers_router
 
-app.include_router(query_router, prefix="/api/v1", tags=["query"])
-app.include_router(history_router, prefix="/api/v1", tags=["history"])
-app.include_router(papers_router, prefix="/api/v1", tags=["papers"])
+app.include_router(papers.router, prefix="/api/v1", tags=["papers"])
+app.include_router(query.router, prefix="/api/v1", tags=["query"])
+app.include_router(research_chat.router, prefix="/api/v1", tags=["research_chat"])

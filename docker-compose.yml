@@ -21,7 +21,6 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - app-network
-    # No health check - simpler
 
   backend:
     build:
@@ -45,7 +44,7 @@ services:
       - qdrant
     networks:
       - app-network
-    restart: on-failure  # Will retry if Qdrant isn't ready yet
+    restart: on-failure
 
   frontend:
     build:
@@ -54,17 +53,21 @@ services:
     container_name: research-frontend
     ports:
       - "3000:3000"
+
+    # 🔥 Correct volume setup for React hot reload
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app          # live code mount
+      - /app/node_modules        # keep container node_modules separate
+
     environment:
-      - REACT_APP_API_URL=http://localhost:8000/api/v1
       - CHOKIDAR_USEPOLLING=true
-    depends_on:
-      - backend
+      - WATCHPACK_POLLING=true   # ⚡ improves reliability
+      - REACT_APP_API_URL=http://localhost:8000/api/v1
+
     networks:
       - app-network
     stdin_open: true
+    tty: true      # 🔥 important for dev mode
 
 networks:
   app-network:

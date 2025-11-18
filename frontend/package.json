@@ -1,11 +1,10 @@
 {
-  "name": "research-assistant-frontend",
-  "version": "1.0.0",
+  "name": "research-assistant",
+  "version": "0.1.0",
   "private": true,
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
     "axios": "^1.6.0",
     "lucide-react": "^0.294.0"
   },
@@ -14,11 +13,6 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
   },
   "browserslist": {
     "production": [
@@ -31,6 +25,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "proxy": "http://localhost:8000"
+  }
 }

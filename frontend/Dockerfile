@@ -2,18 +2,14 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy application code
+# Copy source code
 COPY . .
 
-# Set environment for hot reload
 ENV CHOKIDAR_USEPOLLING=true
 
 EXPOSE 3000
-
 CMD ["npm", "start"]

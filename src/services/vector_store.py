@@ -91,7 +91,7 @@ class VectorStore:
         self,
         query_vector: List[float],
         paper_filter: Optional[List[str]] = None,
-        limit: int = 10
+        limit: int = 5
     ) -> List[Dict[str, Any]]:
         """
         Search for similar vectors in Qdrant with optional paper filtering.

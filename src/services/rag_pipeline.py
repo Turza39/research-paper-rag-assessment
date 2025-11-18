@@ -66,7 +66,7 @@ class RAGPipeline:
         self,
         query_text: str,
         paper_filter: Optional[List[str]] = None,
-        limit: int = 20
+        limit: int = 10
     ) -> QueryResponse:
         logger.info(f"🧠 Query received: '{query_text}' | filter={paper_filter}")
 
