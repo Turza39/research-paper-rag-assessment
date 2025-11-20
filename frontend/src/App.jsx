@@ -15,12 +15,21 @@ function App() {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [queryCounter, setQueryCounter] = useState(0);
+    const [isInitialized, setIsInitialized] = useState(false);
 
     // Fetch papers on mount
     useEffect(() => {
         fetchPapers();
         loadResearches();
     }, []);
+
+    // Restore activeResearch and chatMode after researches are loaded
+    useEffect(() => {
+        if (researches.length > 0 && !isInitialized) {
+            restoreActiveResearch();
+            setIsInitialized(true);
+        }
+    }, [researches, isInitialized]);
 
     // Load chat history when mode changes
     useEffect(() => {
@@ -37,16 +46,41 @@ function App() {
         }
     };
 
-    const loadResearches = () => {
-        const saved = localStorage.getItem('researches');
-        if (saved) {
-            setResearches(JSON.parse(saved));
+    const loadResearches = async () => {
+        try {
+            console.log('📥 Loading researches from MongoDB...');
+            const response = await axios.get(`${API_BASE_URL}/researches`);
+            console.log('✅ Researches loaded:', response.data);
+            setResearches(response.data);
+        } catch (err) {
+            console.error('❌ Error loading researches:', err);
+            setResearches([]);
         }
     };
 
-    const saveResearches = (newResearches) => {
+    const restoreActiveResearch = () => {
+        try {
+            const saved = localStorage.getItem('activeResearchId');
+            if (saved) {
+                console.log('🔄 Restoring active research:', saved);
+                const research = researches.find(r => r._id === saved);
+                if (research) {
+                    setActiveResearch(research);
+                    setChatMode('research');
+                    console.log('✅ Active research restored:', research.name);
+                } else {
+                    console.log('⚠️ Research not found, staying in general chat');
+                }
+            }
+        } catch (err) {
+            console.error('❌ Error restoring research:', err);
+        }
+    };
+
+    const saveResearches = async (newResearches) => {
+        // This function is now called when UI changes happen
+        // The actual save operations are done through individual API calls
         setResearches(newResearches);
-        localStorage.setItem('researches', JSON.stringify(newResearches));
     };
 
     const loadChatHistory = async () => {
@@ -96,11 +130,11 @@ function App() {
                     setMessages([]);
                 }
             } else if (chatMode === 'research' && activeResearch) {
-                console.log(`📥 Loading research chat history for: ${activeResearch.id}`);
+                console.log(`📥 Loading research chat history for: ${activeResearch._id}`);
 
                 try {
                     const response = await axios.get(
-                        `${API_BASE_URL}/research/${activeResearch.id}/chat-history`,
+                        `${API_BASE_URL}/research/${activeResearch._id}/chat-history`,
                         {
                             params: { limit: 50, skip: 0 },
                             timeout: 10000
@@ -169,12 +203,25 @@ function App() {
             await axios.delete(`${API_BASE_URL}/papers/${paperId}`);
             await fetchPapers();
 
-            // Remove from all researches
-            const updatedResearches = researches.map(research => ({
-                ...research,
-                papers: research.papers.filter(p => p !== paperId)
-            }));
-            saveResearches(updatedResearches);
+            // Remove paper from all researches by calling the API
+            const updatedResearches = [];
+            for (const research of researches) {
+                if (research.papers.includes(paperId)) {
+                    try {
+                        await axios.delete(`${API_BASE_URL}/researches/${research._id}/papers/${paperId}`);
+                        updatedResearches.push({
+                            ...research,
+                            papers: research.papers.filter(p => p !== paperId)
+                        });
+                    } catch (err) {
+                        console.error(`Error removing paper from research ${research._id}:`, err);
+                        updatedResearches.push(research);
+                    }
+                } else {
+                    updatedResearches.push(research);
+                }
+            }
+            setResearches(updatedResearches);
 
             return { success: true };
         } catch (err) {
@@ -190,9 +237,9 @@ function App() {
             }
 
             try {
-                console.log(`🗑️ Deleting research chat history for: ${activeResearch.id}`);
+                console.log(`🗑️ Deleting research chat history for: ${activeResearch._id}`);
                 const response = await axios.delete(
-                    `${API_BASE_URL}/research/${activeResearch.id}/chat-history`,
+                    `${API_BASE_URL}/research/${activeResearch._id}/chat-history`,
                     { data: { confirm: true } }
                 );
 
@@ -259,7 +306,7 @@ function App() {
                 console.log('📤 Sending research query:', {
                     id: currentQueryId,
                     question: message,
-                    research_id: activeResearch?.id,
+                    research_id: activeResearch?._id,
                     research_name: activeResearch?.name,
                     expected_papers: paperFileNames,
                 });
@@ -267,7 +314,7 @@ function App() {
                 const response = await axios.post(`${API_BASE_URL}/query`, {
                     id: currentQueryId,
                     question: message,
-                    research_id: activeResearch?.id,
+                    research_id: activeResearch?._id,
                     research_name: activeResearch?.name,
                     expected_papers: paperFileNames,
                     difficulty: "medium",
@@ -321,6 +368,22 @@ function App() {
         }
     };
 
+    const handleSetActiveResearch = (research) => {
+        try {
+            if (research && research._id) {
+                console.log('💾 Saving active research to localStorage:', research._id);
+                localStorage.setItem('activeResearchId', research._id);
+            } else {
+                console.log('🗑️ Clearing active research from localStorage');
+                localStorage.removeItem('activeResearchId');
+            }
+            setActiveResearch(research);
+        } catch (err) {
+            console.error('❌ Error saving active research:', err);
+            setActiveResearch(research);
+        }
+    };
+
     return (
         <div className="app-container">
             <LeftSidebar
@@ -331,7 +394,7 @@ function App() {
                 onFileUpload={handleFileUpload}
                 onDeletePaper={handleDeletePaper}
                 onResearchesChange={saveResearches}
-                onActiveResearchChange={setActiveResearch}
+                onActiveResearchChange={handleSetActiveResearch}
                 onChatModeChange={setChatMode}
                 onMessagesReset={() => setMessages([])}
                 onDeleteChatHistory={handleDeleteChatHistory}

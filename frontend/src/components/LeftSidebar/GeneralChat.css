@@ -2,6 +2,7 @@
     flex-shrink: 0;
     cursor: pointer;
     transition: var(--transition);
+    min-height: auto;
 }
 
 .general-chat-section:hover {
@@ -23,18 +24,6 @@
 
 .general-chat-section.active .section-title {
     color: white;
-}
-
-.general-chat-description {
-    font-size: 13px;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    margin: 0;
-}
-
-.general-chat-section.active .general-chat-description {
-    color: var(--primary-dark);
-    font-weight: 500;
 }
 
 .active-indicator {

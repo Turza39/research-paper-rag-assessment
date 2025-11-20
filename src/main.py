@@ -2,26 +2,16 @@
 Main FastAPI application entry point.
 """
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # ADD THIS
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
-from src.api.routes import papers, query, research_chat
-from src.services.rag_pipeline import RAGPipeline
 
 # ----------------- Lifespan -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run setup and teardown logic for FastAPI."""
-    print("🔄 Checking and processing existing PDFs...")
-
-    pipeline = RAGPipeline()
-    sample_papers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_papers")
-
-    if os.path.exists(sample_papers_dir):
-        print(f"📁 Found sample papers at {sample_papers_dir}, processing...")
-        pipeline.process_directory(sample_papers_dir)
-    else:
-        print(f"⚠️ Skipping initialization — directory not found: {sample_papers_dir}")
+    print("✅ Application initialized. Ready to accept uploaded PDFs.")
+    print("📌 Note: This system now accepts uploaded PDFs only.")
+    print("   Use POST /api/v1/papers/upload to add research papers.")
 
     yield  # Application runs after this line
 
@@ -58,7 +48,10 @@ app.add_middleware(
 from src.api.routes.query import router as query_router
 from src.api.routes.analytics import router as history_router
 from src.api.routes.papers import router as papers_router
+from src.api.routes.research_chat import router as research_chat_router
+from src.api.routes.research import router as research_router
 
-app.include_router(papers.router, prefix="/api/v1", tags=["papers"])
-app.include_router(query.router, prefix="/api/v1", tags=["query"])
-app.include_router(research_chat.router, prefix="/api/v1", tags=["research_chat"])
+app.include_router(papers_router, prefix="/api/v1", tags=["papers"])
+app.include_router(query_router, prefix="/api/v1", tags=["query"])
+app.include_router(research_chat_router, prefix="/api/v1", tags=["research_chat"])
+app.include_router(research_router, prefix="/api/v1", tags=["research"])

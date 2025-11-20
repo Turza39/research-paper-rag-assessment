@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import {
     ChevronRight,
     ChevronDown,
@@ -13,6 +14,8 @@ import {
 } from 'lucide-react';
 import './ResearchesSection.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+
 function ResearchesSection({
     papers,
     researches,
@@ -24,10 +27,10 @@ function ResearchesSection({
     const [expandedResearches, setExpandedResearches] = useState({});
     const [showNewResearch, setShowNewResearch] = useState(false);
     const [newResearchName, setNewResearchName] = useState('');
-    const [showAllFiles, setShowAllFiles] = useState(false);
     const [editingResearch, setEditingResearch] = useState(null);
     const [editName, setEditName] = useState('');
     const [showAddPapers, setShowAddPapers] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
 
     const toggleExpanded = (researchId) => {
         setExpandedResearches(prev => ({
@@ -36,67 +39,145 @@ function ResearchesSection({
         }));
     };
 
-    const handleCreateResearch = () => {
+    const handleCreateResearch = async () => {
         if (!newResearchName.trim()) return;
 
-        const newResearch = {
-            id: Date.now().toString(),
-            name: newResearchName.trim(),
-            papers: [],
-            createdAt: new Date().toISOString()
-        };
+        setIsLoading(true);
+        try {
+            console.log('📝 Creating new research topic...');
+            const response = await axios.post(`${API_BASE_URL}/researches`, {
+                name: newResearchName.trim(),
+                description: '',
+                papers: [],
+                tags: []
+            });
 
-        onResearchesChange([...researches, newResearch]);
-        setNewResearchName('');
-        setShowNewResearch(false);
-        setExpandedResearches(prev => ({ ...prev, [newResearch.id]: true }));
+            console.log('✅ Research created:', response.data);
+            
+            // Add to researches list
+            onResearchesChange([...researches, response.data]);
+            setNewResearchName('');
+            setShowNewResearch(false);
+            setExpandedResearches(prev => ({ ...prev, [response.data._id]: true }));
+        } catch (err) {
+            console.error('❌ Error creating research:', err);
+            alert('Failed to create research topic. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleDeleteResearch = (researchId, event) => {
+    const handleDeleteResearch = async (researchId, event) => {
         event.stopPropagation();
         if (window.confirm('Delete this research topic?')) {
-            onResearchesChange(researches.filter(r => r.id !== researchId));
-            if (activeResearch?.id === researchId) {
-                onActiveResearchChange(null);
+            setIsLoading(true);
+            try {
+                console.log('🗑️ Deleting research:', researchId);
+                await axios.delete(`${API_BASE_URL}/researches/${researchId}`);
+                console.log('✅ Research deleted');
+
+                onResearchesChange(researches.filter(r => r._id !== researchId));
+                if (activeResearch?._id === researchId) {
+                    onActiveResearchChange(null);
+                }
+            } catch (err) {
+                console.error('❌ Error deleting research:', err);
+                alert('Failed to delete research topic. Please try again.');
+            } finally {
+                setIsLoading(false);
             }
         }
     };
 
-    const handleRenameResearch = (researchId) => {
+    const handleRenameResearch = async (researchId) => {
         if (!editName.trim()) return;
-        
-        onResearchesChange(
-            researches.map(r => 
-                r.id === researchId ? { ...r, name: editName.trim() } : r
-            )
-        );
-        setEditingResearch(null);
-        setEditName('');
+
+        setIsLoading(true);
+        try {
+            console.log('✏️ Renaming research:', researchId);
+            const response = await axios.put(`${API_BASE_URL}/researches/${researchId}`, {
+                name: editName.trim()
+            });
+
+            console.log('✅ Research renamed:', response.data);
+
+            onResearchesChange(
+                researches.map(r => 
+                    r._id === researchId ? response.data : r
+                )
+            );
+
+            // Update active research if it's the one being renamed
+            if (activeResearch?._id === researchId) {
+                onActiveResearchChange(response.data);
+            }
+
+            setEditingResearch(null);
+            setEditName('');
+        } catch (err) {
+            console.error('❌ Error renaming research:', err);
+            alert('Failed to rename research topic. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleAddPaperToResearch = (researchId, paperId) => {
-        onResearchesChange(
-            researches.map(r => {
-                if (r.id === researchId) {
-                    if (!r.papers.includes(paperId)) {
-                        return { ...r, papers: [...r.papers, paperId] };
-                    }
+    const handleAddPaperToResearch = async (researchId, paperId) => {
+        setIsLoading(true);
+        try {
+            console.log('➕ Adding paper to research:', paperId, 'to', researchId);
+            await axios.post(`${API_BASE_URL}/researches/${researchId}/papers/${paperId}`);
+            console.log('✅ Paper added');
+
+            // Update the research in state
+            const updatedResearches = researches.map(r => {
+                if (r._id === researchId) {
+                    return { ...r, papers: [...r.papers, paperId] };
                 }
                 return r;
-            })
-        );
-        setShowAddPapers(null);
+            });
+            onResearchesChange(updatedResearches);
+
+            // Update active research if it's the one being modified
+            if (activeResearch?._id === researchId) {
+                onActiveResearchChange(updatedResearches.find(r => r._id === researchId));
+            }
+
+            setShowAddPapers(null);
+        } catch (err) {
+            console.error('❌ Error adding paper to research:', err);
+            alert('Failed to add paper to research. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleRemovePaperFromResearch = (researchId, paperId, event) => {
+    const handleRemovePaperFromResearch = async (researchId, paperId, event) => {
         event.stopPropagation();
-        onResearchesChange(
-            researches.map(r =>
-                r.id === researchId
+        setIsLoading(true);
+        try {
+            console.log('➖ Removing paper from research:', paperId, 'from', researchId);
+            await axios.delete(`${API_BASE_URL}/researches/${researchId}/papers/${paperId}`);
+            console.log('✅ Paper removed');
+
+            // Update the research in state
+            const updatedResearches = researches.map(r =>
+                r._id === researchId
                     ? { ...r, papers: r.papers.filter(p => p !== paperId) }
                     : r
-            )
-        );
+            );
+            onResearchesChange(updatedResearches);
+
+            // Update active research if it's the one being modified
+            if (activeResearch?._id === researchId) {
+                onActiveResearchChange(updatedResearches.find(r => r._id === researchId));
+            }
+        } catch (err) {
+            console.error('❌ Error removing paper from research:', err);
+            alert('Failed to remove paper from research. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const getPaperById = (paperId) => {
@@ -104,7 +185,7 @@ function ResearchesSection({
     };
 
     const getAvailablePapers = (researchId) => {
-        const research = researches.find(r => r.id === researchId);
+        const research = researches.find(r => r._id === researchId);
         if (!research) return papers;
         return papers.filter(p => !research.papers.includes(p.file_name));
     };
@@ -123,6 +204,7 @@ function ResearchesSection({
                         e.stopPropagation();
                         setShowNewResearch(true);
                     }}
+                    disabled={isLoading}
                     title="New research topic"
                 >
                     <Plus size={16} />
@@ -146,7 +228,7 @@ function ResearchesSection({
                             <button
                                 className="btn-small btn-primary"
                                 onClick={handleCreateResearch}
-                                disabled={!newResearchName.trim()}
+                                disabled={!newResearchName.trim() || isLoading}
                             >
                                 <Check size={14} />
                                 Create
@@ -157,6 +239,7 @@ function ResearchesSection({
                                     setShowNewResearch(false);
                                     setNewResearchName('');
                                 }}
+                                disabled={isLoading}
                             >
                                 <X size={14} />
                                 Cancel
@@ -174,6 +257,7 @@ function ResearchesSection({
                             <button
                                 className="btn-small btn-primary"
                                 onClick={() => setShowNewResearch(true)}
+                                disabled={isLoading}
                             >
                                 <Plus size={14} />
                                 Create First Topic
@@ -182,8 +266,8 @@ function ResearchesSection({
                     ) : (
                         researches.map(research => (
                             <div
-                                key={research.id}
-                                className={`research-item ${activeResearch?.id === research.id ? 'active' : ''}`}
+                                key={research._id}
+                                className={`research-item ${activeResearch?._id === research._id ? 'active' : ''}`}
                             >
                                 {/* Research Header */}
                                 <div
@@ -196,10 +280,10 @@ function ResearchesSection({
                                         className="expand-button"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            toggleExpanded(research.id);
+                                            toggleExpanded(research._id);
                                         }}
                                     >
-                                        {expandedResearches[research.id] ? (
+                                        {expandedResearches[research._id] ? (
                                             <ChevronDown size={16} />
                                         ) : (
                                             <ChevronRight size={16} />
@@ -208,13 +292,13 @@ function ResearchesSection({
 
                                     <Folder size={16} className="folder-icon" />
 
-                                    {editingResearch === research.id ? (
+                                    {editingResearch === research._id ? (
                                         <input
                                             type="text"
                                             value={editName}
                                             onChange={(e) => setEditName(e.target.value)}
                                             onKeyPress={(e) => {
-                                                if (e.key === 'Enter') handleRenameResearch(research.id);
+                                                if (e.key === 'Enter') handleRenameResearch(research._id);
                                                 if (e.key === 'Escape') {
                                                     setEditingResearch(null);
                                                     setEditName('');
@@ -223,20 +307,22 @@ function ResearchesSection({
                                             onClick={(e) => e.stopPropagation()}
                                             className="research-name-input-inline"
                                             autoFocus
+                                            disabled={isLoading}
                                         />
                                     ) : (
                                         <span className="research-name">{research.name}</span>
                                     )}
 
                                     <div className="research-actions">
-                                        {editingResearch === research.id ? (
+                                        {editingResearch === research._id ? (
                                             <>
                                                 <button
                                                     className="icon-button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleRenameResearch(research.id);
+                                                        handleRenameResearch(research._id);
                                                     }}
+                                                    disabled={isLoading}
                                                     title="Save"
                                                 >
                                                     <Check size={14} />
@@ -248,6 +334,7 @@ function ResearchesSection({
                                                         setEditingResearch(null);
                                                         setEditName('');
                                                     }}
+                                                    disabled={isLoading}
                                                     title="Cancel"
                                                 >
                                                     <X size={14} />
@@ -259,16 +346,18 @@ function ResearchesSection({
                                                     className="icon-button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        setEditingResearch(research.id);
+                                                        setEditingResearch(research._id);
                                                         setEditName(research.name);
                                                     }}
+                                                    disabled={isLoading}
                                                     title="Rename"
                                                 >
                                                     <Edit2 size={14} />
                                                 </button>
                                                 <button
                                                     className="icon-button delete-btn"
-                                                    onClick={(e) => handleDeleteResearch(research.id, e)}
+                                                    onClick={(e) => handleDeleteResearch(research._id, e)}
+                                                    disabled={isLoading}
                                                     title="Delete"
                                                 >
                                                     <Trash2 size={14} />
@@ -279,7 +368,7 @@ function ResearchesSection({
                                 </div>
 
                                 {/* Research Papers */}
-                                {expandedResearches[research.id] && (
+                                {expandedResearches[research._id] && (
                                     <div className="research-papers">
                                         {research.papers.length === 0 ? (
                                             <div className="empty-papers">
@@ -296,7 +385,8 @@ function ResearchesSection({
                                                         <span className="paper-name-small">{paper.file_name}</span>
                                                         <button
                                                             className="icon-button delete-btn"
-                                                            onClick={(e) => handleRemovePaperFromResearch(research.id, paperId, e)}
+                                                            onClick={(e) => handleRemovePaperFromResearch(research._id, paperId, e)}
+                                                            disabled={isLoading}
                                                             title="Remove from research"
                                                         >
                                                             <X size={12} />
@@ -307,28 +397,30 @@ function ResearchesSection({
                                         )}
 
                                         {/* Add Papers Button */}
-                                        {showAddPapers === research.id ? (
+                                        {showAddPapers === research._id ? (
                                             <div className="add-papers-dropdown">
                                                 <div className="dropdown-header">
                                                     <span>Select papers to add</span>
                                                     <button
                                                         className="icon-button"
                                                         onClick={() => setShowAddPapers(null)}
+                                                        disabled={isLoading}
                                                     >
                                                         <X size={14} />
                                                     </button>
                                                 </div>
                                                 <div className="papers-dropdown-list">
-                                                    {getAvailablePapers(research.id).length === 0 ? (
+                                                    {getAvailablePapers(research._id).length === 0 ? (
                                                         <div className="no-papers-available">
                                                             All papers already added
                                                         </div>
                                                     ) : (
-                                                        getAvailablePapers(research.id).map(paper => (
+                                                        getAvailablePapers(research._id).map(paper => (
                                                             <div
                                                                 key={paper.file_name}
                                                                 className="paper-dropdown-item"
-                                                                onClick={() => handleAddPaperToResearch(research.id, paper.file_name)}
+                                                                onClick={() => handleAddPaperToResearch(research._id, paper.file_name)}
+                                                                style={{ cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1 }}
                                                             >
                                                                 <FileText size={14} />
                                                                 <span>{paper.file_name}</span>
@@ -343,8 +435,9 @@ function ResearchesSection({
                                                 className="add-paper-button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setShowAddPapers(research.id);
+                                                    setShowAddPapers(research._id);
                                                 }}
+                                                disabled={isLoading}
                                             >
                                                 <Plus size={14} />
                                                 Add Papers
@@ -354,60 +447,6 @@ function ResearchesSection({
                                 )}
                             </div>
                         ))
-                    )}
-                </div>
-
-                {/* All Files Section */}
-                <div className="all-files-section">
-                    <div
-                        className="all-files-header"
-                        onClick={() => setShowAllFiles(!showAllFiles)}
-                    >
-                        <button className="expand-button">
-                            {showAllFiles ? (
-                                <ChevronDown size={16} />
-                            ) : (
-                                <ChevronRight size={16} />
-                            )}
-                        </button>
-                        <FileText size={16} />
-                        <span className="all-files-title">All Uploaded Files</span>
-                        <span className="count-badge">{papers.length}</span>
-                    </div>
-
-                    {showAllFiles && (
-                        <div className="all-files-list">
-                            {papers.length === 0 ? (
-                                <div className="empty-state-small">
-                                    <FileText size={24} />
-                                    <p>No files uploaded</p>
-                                </div>
-                            ) : (
-                                papers.map(paper => (
-                                    <div key={paper.file_name} className="file-item">
-                                        <FileText size={14} />
-                                        <div className="file-info">
-                                            <span className="file-name">{paper.file_name}</span>
-                                            <span className="file-meta">
-                                                {paper.page_count} pages · {paper.vector_count} vectors
-                                            </span>
-                                        </div>
-                                        <button
-                                            className="icon-button delete-btn"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (window.confirm(`Delete ${paper.file_name}?`)) {
-                                                    onDeletePaper(paper.file_name);
-                                                }
-                                            }}
-                                            title="Delete file"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                ))
-                            )}
-                        </div>
                     )}
                 </div>
             </div>

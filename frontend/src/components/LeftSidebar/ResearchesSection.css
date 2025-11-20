@@ -3,15 +3,17 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    max-height: 100%;
 }
 
 .researches-content {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 6px;
     flex: 1;
     overflow-y: auto;
     padding: 0;
+    margin: 0;
 }
 
 .count-badge {
@@ -36,11 +38,12 @@
 
 /* New Research Form */
 .new-research-form {
-    padding: 12px;
+    padding: 10px;
     background: var(--bg-primary);
     border: 2px dashed var(--primary-blue);
     border-radius: var(--radius-sm);
     animation: slideIn 0.3s ease;
+    margin: 0 4px;
 }
 
 .research-name-input {
@@ -121,8 +124,8 @@
 .researches-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 8px;
 }
 
 .empty-state-small {
@@ -163,12 +166,13 @@
 .research-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: 6px;
+    padding: 8px 10px;
     cursor: pointer;
     user-select: none;
     background: var(--bg-secondary);
     transition: var(--transition);
+    margin: 0 4px;
 }
 
 .research-item.active .research-header {
@@ -182,7 +186,7 @@
 .expand-button {
     background: none;
     border: none;
-    padding: 2px;
+    padding: 0;
     cursor: pointer;
     color: var(--text-secondary);
     display: flex;
@@ -205,6 +209,9 @@
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .research-actions {

@@ -1,5 +1,4 @@
 import React from 'react';
-import { MessageSquare } from 'lucide-react';
 import './GeneralChat.css';
 
 function GeneralChat({ isActive, onActivate }) {
@@ -14,11 +13,6 @@ function GeneralChat({ isActive, onActivate }) {
                     <span>General Chat</span>
                 </div>
                 {isActive && <div className="active-indicator">●</div>}
-            </div>
-            <div className="section-content">
-                <p className="general-chat-description">
-                    Have a conversation without specific research context. Ask general questions or explore ideas.
-                </p>
             </div>
         </div>
     );

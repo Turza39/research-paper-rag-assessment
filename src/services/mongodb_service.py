@@ -27,6 +27,7 @@ class MongoDBService:
         self.paper_stats = self.db.paper_stats
         self.query_history = self.db.query_history  # ✅ NEW
         self.research_chat_history = self.db.research_chat_history  # ✅ NEW
+        self.researches = self.db.researches  # ✅ RESEARCH TOPICS
 
     # ================== INITIALIZATION ==================
     async def initialize(self):
@@ -62,6 +63,13 @@ class MongoDBService:
             ("timestamp", DESCENDING)
         ])
         await self.research_chat_history.create_index([("timestamp", DESCENDING)])
+
+        # ✅ NEW: Research topics indexes
+        await self.researches.create_index([("_id", ASCENDING)])
+        await self.researches.create_index([("created_at", DESCENDING)])
+        await self.researches.create_index([("name", 1)])
+        await self.researches.create_index([("tags", 1)])
+        await self.researches.create_index([("is_archived", ASCENDING)])
 
         logger.info("✅ MongoDB indexes created successfully.")
 
@@ -460,6 +468,172 @@ class MongoDBService:
         except Exception as e:
             logger.error(f"❌ Error getting research chat stats: {str(e)}")
             return None
+
+    # ================== RESEARCH TOPIC MANAGEMENT ==================
+
+    async def create_research(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        papers: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None
+    ) -> str:
+        """Create a new research topic."""
+        try:
+            research_doc = {
+                "name": name,
+                "description": description or "",
+                "papers": papers or [],
+                "tags": tags or [],
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "is_archived": False
+            }
+
+            result = await self.researches.insert_one(research_doc)
+            logger.info(f"✅ Created research topic: {result.inserted_id}")
+            return str(result.inserted_id)
+        except Exception as e:
+            logger.error(f"❌ Error creating research: {str(e)}")
+            raise
+
+    async def get_research(self, research_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific research topic by ID."""
+        try:
+            research_doc = await self.researches.find_one({"_id": ObjectId(research_id)})
+            if research_doc:
+                research_doc["_id"] = str(research_doc["_id"])
+                if isinstance(research_doc.get("created_at"), datetime):
+                    research_doc["created_at"] = research_doc["created_at"].isoformat()
+                if isinstance(research_doc.get("updated_at"), datetime):
+                    research_doc["updated_at"] = research_doc["updated_at"].isoformat()
+                return research_doc
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error retrieving research: {str(e)}")
+            return None
+
+    async def get_all_researches(self, include_archived: bool = False) -> List[Dict[str, Any]]:
+        """Retrieve all research topics."""
+        try:
+            query = {} if include_archived else {"is_archived": False}
+            cursor = self.researches.find(query).sort("created_at", DESCENDING)
+            researches = []
+
+            async for doc in cursor:
+                doc["_id"] = str(doc["_id"])
+                if isinstance(doc.get("created_at"), datetime):
+                    doc["created_at"] = doc["created_at"].isoformat()
+                if isinstance(doc.get("updated_at"), datetime):
+                    doc["updated_at"] = doc["updated_at"].isoformat()
+                researches.append(doc)
+
+            logger.info(f"✅ Retrieved {len(researches)} research topics")
+            return researches
+        except Exception as e:
+            logger.error(f"❌ Error retrieving researches: {str(e)}")
+            return []
+
+    async def update_research(
+        self,
+        research_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        papers: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        is_archived: Optional[bool] = None
+    ) -> bool:
+        """Update a research topic."""
+        try:
+            update_data = {}
+
+            if name is not None:
+                update_data["name"] = name
+            if description is not None:
+                update_data["description"] = description
+            if papers is not None:
+                update_data["papers"] = papers
+            if tags is not None:
+                update_data["tags"] = tags
+            if is_archived is not None:
+                update_data["is_archived"] = is_archived
+
+            update_data["updated_at"] = datetime.now(timezone.utc)
+
+            result = await self.researches.update_one(
+                {"_id": ObjectId(research_id)},
+                {"$set": update_data}
+            )
+
+            if result.matched_count > 0:
+                logger.info(f"✅ Updated research topic: {research_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ Research topic not found: {research_id}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error updating research: {str(e)}")
+            raise
+
+    async def add_paper_to_research(self, research_id: str, paper_id: str) -> bool:
+        """Add a paper to a research topic."""
+        try:
+            result = await self.researches.update_one(
+                {"_id": ObjectId(research_id)},
+                {
+                    "$addToSet": {"papers": paper_id},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
+            )
+
+            if result.matched_count > 0:
+                logger.info(f"✅ Added paper {paper_id} to research {research_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ Research topic not found: {research_id}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error adding paper to research: {str(e)}")
+            raise
+
+    async def remove_paper_from_research(self, research_id: str, paper_id: str) -> bool:
+        """Remove a paper from a research topic."""
+        try:
+            result = await self.researches.update_one(
+                {"_id": ObjectId(research_id)},
+                {
+                    "$pull": {"papers": paper_id},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
+            )
+
+            if result.matched_count > 0:
+                logger.info(f"✅ Removed paper {paper_id} from research {research_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ Research topic not found: {research_id}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error removing paper from research: {str(e)}")
+            raise
+
+    async def delete_research(self, research_id: str) -> bool:
+        """Delete a research topic and its chat history."""
+        try:
+            # Delete research topic
+            result = await self.researches.delete_one({"_id": ObjectId(research_id)})
+
+            if result.deleted_count > 0:
+                # Also delete associated chat history
+                await self.research_chat_history.delete_many({"research_id": research_id})
+                logger.info(f"✅ Deleted research topic: {research_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ Research topic not found: {research_id}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error deleting research: {str(e)}")
+            raise
 
 
 # ================== SINGLETON INSTANCE ==================

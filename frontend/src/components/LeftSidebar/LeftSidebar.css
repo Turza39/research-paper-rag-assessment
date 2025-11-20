@@ -5,6 +5,9 @@
     display: flex;
     flex-direction: column;
     box-shadow: var(--shadow-md);
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
 }
 
 .sidebar-header {
@@ -12,6 +15,7 @@
     border-bottom: 1px solid var(--border-light);
     background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark) 100%);
     color: white;
+    flex-shrink: 0;
 }
 
 .header-content {
@@ -48,10 +52,12 @@
 .sidebar-content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    overflow-x: hidden;
+    padding: 8px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px;
+    min-height: 0;
 }
 
 /* Section Styles */
@@ -61,6 +67,7 @@
     border-radius: var(--radius-md);
     overflow: hidden;
     transition: var(--transition);
+    flex-shrink: 0;
 }
 
 .sidebar-section:hover {
@@ -68,7 +75,7 @@
 }
 
 .section-header {
-    padding: 14px 16px;
+    padding: 10px 12px;
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-light);
     display: flex;
@@ -92,5 +99,13 @@
 }
 
 .section-content {
-    padding: 12px;
+    padding: 8px;
+    margin: 0;
+}
+
+/* All Files Section - Positioned at bottom */
+.all-files-section {
+    flex-shrink: 0;
+    max-height: 180px;
+    border-top: 1px solid var(--border-light);
 }

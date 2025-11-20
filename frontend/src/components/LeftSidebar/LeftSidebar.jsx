@@ -2,6 +2,7 @@ import React from 'react';
 import FileUpload from './FileUpload';
 import GeneralChat from './GeneralChat';
 import ResearchesSection from './ResearchesSection';
+import AllFilesSection from './AllFilesSection';
 import './LeftSidebar.css';
 
 function LeftSidebar({
@@ -52,9 +53,13 @@ function LeftSidebar({
                         onChatModeChange('research');
                         onMessagesReset();
                     }}
-                    onDeletePaper={onDeletePaper}
                 />
             </div>
+
+            <AllFilesSection
+                papers={papers}
+                onDeletePaper={onDeletePaper}
+            />
         </div>
     );
 }
