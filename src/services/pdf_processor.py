@@ -5,10 +5,9 @@ import os, uuid
 from io import BytesIO
 import re
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 from PyPDF2 import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src.models.paper import Paper, Section, Chunk
 
 # Configure logging
@@ -17,33 +16,38 @@ logger = logging.getLogger(__name__)
 
 
 class PDFProcessor:
-    def __init__(self):
-        """Initialize with intelligent chunking strategy."""
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50,
-            length_function=len,
-            separators=[
-                "\n## ",
-                "\n\n",
-                ".\n",
-                ". ",
-                "?\n",
-                "? ",
-                "\n",
-                " ",
-                ""
-            ]
-        )
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 150):
+        """
+        Initialize with intelligent section-based chunking strategy.
+        
+        Args:
+            chunk_size: Maximum size of each chunk in characters
+            chunk_overlap: Number of characters to overlap between chunks
+        """
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        
+        # Flexible section keywords (case-insensitive matching)
+        self.section_keywords = {
+            "Abstract": ["abstract", "summary"],
+            "Introduction": ["introduction", "intro", "background"],
+            "Related Work": ["related work", "literature review", "previous work", "prior work"],
+            "Methodology": ["methodology", "methods", "method", "approach", "proposed method", "materials and methods"],
+            "System Design": ["system design", "system architecture", "architecture", "design", "implementation", "framework"],
+            "Results": ["results", "experiments", "experimental results", "evaluation", "findings", "performance evaluation"],
+            "Discussion": ["discussion", "analysis"],
+            "Conclusion": ["conclusion", "conclusions", "concluding remarks", "summary and conclusion"],
+            "References": ["references", "bibliography", "works cited"],
+            "Acknowledgments": ["acknowledgment", "acknowledgments", "acknowledgement", "acknowledgements"],
+            "Appendix": ["appendix", "appendices", "supplementary material"]
+        }
 
-    # -----------------------------------------------------------
-    # EXTRACT TEXT FROM PDF FILE
-    # -----------------------------------------------------------
     def extract_text_from_pdf(self, file_path: str) -> tuple[str, dict]:
         """Extract text and metadata from PDF file."""
         try:
             pdf = PdfReader(file_path)
             text = ""
+            page_markers = []
             metadata = {
                 "page_count": len(pdf.pages),
                 "title": "",
@@ -55,7 +59,8 @@ class PDFProcessor:
             for i, page in enumerate(pdf.pages):
                 page_text = page.extract_text()
                 if page_text:
-                    text += f"\n## Page {i+1}\n\n{page_text}\n\n"
+                    page_markers.append(len(text))
+                    text += page_text + "\n\n"
 
             # PDF metadata
             if pdf.metadata:
@@ -65,37 +70,38 @@ class PDFProcessor:
                     "keywords": pdf.metadata.get("/Keywords", "").strip(),
                 })
 
-            # fallback title from first page
+            # Fallback title from first page
             if not metadata["title"] and pdf.pages:
                 first_page_text = pdf.pages[0].extract_text() or ""
                 lines = [line.strip() for line in first_page_text.splitlines() if line.strip()]
                 if lines:
                     metadata["title"] = lines[0]
 
+            metadata["page_markers"] = page_markers
             return text, metadata
         except Exception as e:
             logger.error(f"Error extracting text from {file_path}: {e}")
-            return "", {"file_name": os.path.basename(file_path)}
+            return "", {"file_name": os.path.basename(file_path), "page_markers": []}
 
-    # -----------------------------------------------------------
-    # EXTRACT TEXT FROM PDF BYTES (For file uploads)
-    # -----------------------------------------------------------
-    def extract_text_from_bytes(self, pdf_bytes: bytes) -> tuple[str, dict]:
+    def extract_text_from_bytes(self, pdf_bytes: bytes, file_name: str = "uploaded.pdf") -> tuple[str, dict]:
         """Extract text and metadata from PDF bytes (for file uploads)."""
         try:
             pdf = PdfReader(BytesIO(pdf_bytes))
             text = ""
+            page_markers = []
             metadata = {
                 "page_count": len(pdf.pages),
                 "title": "",
                 "author": "",
                 "keywords": "",
+                "file_name": file_name
             }
 
             for i, page in enumerate(pdf.pages):
                 page_text = page.extract_text()
                 if page_text:
-                    text += f"\n## Page {i+1}\n\n{page_text}\n\n"
+                    page_markers.append(len(text))
+                    text += page_text + "\n\n"
 
             # PDF metadata
             if pdf.metadata:
@@ -105,195 +111,319 @@ class PDFProcessor:
                     "keywords": pdf.metadata.get("/Keywords", "").strip(),
                 })
 
-            # fallback title from first page
+            # Fallback title from first page
             if not metadata["title"] and pdf.pages:
                 first_page_text = pdf.pages[0].extract_text() or ""
                 lines = [line.strip() for line in first_page_text.splitlines() if line.strip()]
                 if lines:
                     metadata["title"] = lines[0]
 
+            metadata["page_markers"] = page_markers
             return text, metadata
         except Exception as e:
             logger.error(f"Error extracting text from PDF bytes: {e}")
-            return "", {"title": "", "author": "", "keywords": "", "page_count": 0}
+            return "", {"title": "", "author": "", "keywords": "", "page_count": 0, "file_name": file_name, "page_markers": []}
 
-    # -----------------------------------------------------------
-    # DETECT MAJOR SECTIONS IN TEXT
-    # -----------------------------------------------------------
-    def detect_sections(self, text: str) -> Dict[str, str]:
+    def is_section_header(self, text: str, start_pos: int, end_pos: int) -> Tuple[bool, Optional[str]]:
         """
-        Detect major research paper sections using regex patterns.
-        Returns dict mapping section names to their content.
+        Check if text segment is a section header.
+        
+        Returns:
+            (is_header, section_name)
         """
-        sections = {}
+        segment = text[start_pos:end_pos].strip()
         
-        # Section patterns (case-insensitive, with boundary handling)
-        section_patterns = {
-            "Introduction": r"(?:^|\n)\s*(?:1\.|I\.?)\s*(?:INTRODUCTION|INTRO)[\s:\n]+(.*?)(?=\n\s*(?:2\.|II\.?|[A-Z][A-Z\s]+)|\Z)",
-            "Related Work": r"(?:^|\n)\s*(?:\d+\.|[A-Z]+\.?)\s*(?:RELATED\s+WORK|LITERATURE\s+REVIEW)[\s:\n]+(.*?)(?=\n\s*(?:\d+\.|[A-Z][A-Z\s]+)|\Z)",
-            "Methodology": r"(?:^|\n)\s*(?:\d+\.|[A-Z]+\.?)\s*(?:METHODOLOGY|METHOD|APPROACH|FRAMEWORK|SYSTEM|DESIGN)[\s:\n]+(.*?)(?=\n\s*(?:\d+\.|[A-Z][A-Z\s]+)|\Z)",
-            "Results": r"(?:^|\n)\s*(?:\d+\.|[A-Z]+\.?)\s*(?:RESULTS|EXPERIMENTS|EXPERIMENTAL|FINDINGS|EVALUATION|PERFORMANCE)[\s:\n]+(.*?)(?=\n\s*(?:\d+\.|[A-Z][A-Z\s]+)|\Z)",
-            "Discussion": r"(?:^|\n)\s*(?:\d+\.|[A-Z]+\.?)\s*(?:DISCUSSION|ANALYSIS|IMPLICATIONS)[\s:\n]+(.*?)(?=\n\s*(?:\d+\.|[A-Z][A-Z\s]+)|\Z)",
-            "Conclusion": r"(?:^|\n)\s*(?:\d+\.|[A-Z]+\.?)\s*(?:CONCLUSION|CONCLUSIONS|SUMMARY|FINAL\s+REMARKS)[\s:\n]+(.*?)(?=\n\s*(?:REFERENCES|BIBLIOGRAPHY|\d+\.|[A-Z][A-Z\s]+)|\Z)",
-            "References": r"(?:^|\n)\s*(?:REFERENCES|BIBLIOGRAPHY|WORKS\s+CITED)[\s:\n]+(.*?)(?=\Z)",
-            "Abstract": r"(?:^|\n)\s*(?:ABSTRACT)[\s:\n]+(.*?)(?=\n\s*(?:1\.|INTRODUCTION|[A-Z][A-Z\s]{5,})|\Z)",
-        }
+        # Must be reasonably short (not a paragraph)
+        if len(segment) > 150 or len(segment) < 3:
+            return False, None
         
-        text_upper = text.upper()
+        # Must not have too many lowercase words (headers are typically title case or uppercase)
+        words = segment.split()
+        if len(words) > 10:  # Headers are typically short
+            return False, None
         
-        for section_name, pattern in section_patterns.items():
-            match = re.search(pattern, text_upper, re.MULTILINE | re.DOTALL | re.IGNORECASE)
-            if match:
-                section_text = text[match.start(1):match.end(1)].strip()
-                if len(section_text) > 50:  # Only keep substantial sections
-                    sections[section_name] = section_text
-                    logger.info(f"✅ Detected {section_name}: {len(section_text)} chars")
-                else:
-                    logger.debug(f"⏭️ Skipped {section_name}: Too short ({len(section_text)} chars)")
-            else:
-                logger.debug(f"❌ Could not detect {section_name}")
+        # Check against known section keywords
+        segment_lower = segment.lower()
+        
+        for section_name, keywords in self.section_keywords.items():
+            for keyword in keywords:
+                # Match with optional numbering prefix
+                # Patterns: "Abstract:", "1. Introduction", "I. INTRODUCTION", "Introduction"
+                patterns = [
+                    f"^{re.escape(keyword)}\\s*:?\\s*$",  # "Abstract:" or "Abstract"
+                    f"^\\d+\\.?\\s*{re.escape(keyword)}\\s*:?\\s*$",  # "1. Introduction"
+                    f"^[IVX]+\\.?\\s*{re.escape(keyword)}\\s*:?\\s*$",  # "I. INTRODUCTION"
+                    f"^[A-Z]\\.\\s*{re.escape(keyword)}",  # "A. Background"
+                ]
+                
+                for pattern in patterns:
+                    if re.match(pattern, segment_lower, re.IGNORECASE):
+                        logger.debug(f"✅ Detected section: {section_name} | Text: '{segment[:50]}'")
+                        return True, section_name
+        
+        return False, None
+
+    def find_all_sections(self, text: str) -> List[Tuple[int, int, str]]:
+        """
+        Find all section boundaries in the text using flexible pattern matching.
+        
+        Returns:
+            List of tuples: (start_pos, end_pos, section_name)
+        """
+        sections = []
+        lines = text.split('\n')
+        current_pos = 0
+        
+        for line in lines:
+            line_start = current_pos
+            line_end = current_pos + len(line)
+            
+            # Check if this line is a section header
+            is_header, section_name = self.is_section_header(text, line_start, line_end)
+            
+            if is_header and section_name:
+                sections.append((line_start, line_end, section_name))
+            
+            current_pos = line_end + 1  # +1 for newline character
+        
+        logger.info(f"🔍 Found {len(sections)} sections")
+        for i, (start, end, name) in enumerate(sections):
+            preview = text[start:end].strip()[:60]
+            logger.info(f"  {i+1}. {name} at pos {start}: '{preview}'")
         
         return sections
 
-    # -----------------------------------------------------------
-    def create_chunks(self, text: str, file_metadata: Dict[str, any], max_chunk_size: int = 1000) -> List[Chunk]:
-        """
-        Create text chunks with proper section detection.
-        
-        Strategy:
-        1. Detect major sections (Introduction, Methodology, Results, etc.)
-        2. Create chunks from each section with proper labels
-        3. For undetected text, use paragraph-based chunking
-        """
-        import uuid
-        text_chunks = []
+    def get_page_number(self, char_position: int, page_markers: List[int]) -> int:
+        """Calculate page number based on character position."""
+        if not page_markers:
+            return 1
+            
+        for i, marker in enumerate(page_markers):
+            if char_position < marker:
+                return max(1, i)
+        return len(page_markers)
 
-        # Ensure both 'source' and 'file_name' exist
+    def create_overlapping_chunks(
+        self, 
+        text: str, 
+        section_name: str, 
+        file_metadata: Dict, 
+        start_char_pos: int
+    ) -> List[Chunk]:
+        """Split text into overlapping chunks while preserving context."""
+        chunks = []
+        text_length = len(text)
+        page_markers = file_metadata.get("page_markers", [])
+        
+        if text_length <= self.chunk_size:
+            unique_id = str(uuid.uuid4())
+            page_num = self.get_page_number(start_char_pos, page_markers)
+            
+            chunks.append(Chunk(
+                text=text.strip(),
+                metadata={
+                    "file_name": file_metadata.get("file_name", "unknown"),
+                    "source": file_metadata.get("file_name", "unknown"),
+                    "section": section_name,
+                    "page": page_num,
+                    "chunk_index": 0,
+                    "vector_id": unique_id,
+                    "title": file_metadata.get("title", ""),
+                    "author": file_metadata.get("author", ""),
+                    "keywords": file_metadata.get("keywords", ""),
+                    "page_count": file_metadata.get("page_count", 0)
+                },
+                vector_id=unique_id
+            ))
+            return chunks
+        
+        start = 0
+        chunk_index = 0
+        
+        while start < text_length:
+            end = min(start + self.chunk_size, text_length)
+            
+            if end < text_length:
+                search_start = max(end - 100, start)
+                sentence_end = max(
+                    text.rfind('. ', search_start, end),
+                    text.rfind('.\n', search_start, end),
+                    text.rfind('?\n', search_start, end),
+                    text.rfind('!\n', search_start, end)
+                )
+                
+                if sentence_end > start:
+                    end = sentence_end + 1
+            
+            chunk_text = text[start:end].strip()
+            
+            if chunk_text:
+                unique_id = str(uuid.uuid4())
+                current_char_pos = start_char_pos + start
+                page_num = self.get_page_number(current_char_pos, page_markers)
+                
+                chunks.append(Chunk(
+                    text=chunk_text,
+                    metadata={
+                        "file_name": file_metadata.get("file_name", "unknown"),
+                        "source": file_metadata.get("file_name", "unknown"),
+                        "section": section_name,
+                        "page": page_num,
+                        "chunk_index": chunk_index,
+                        "vector_id": unique_id,
+                        "title": file_metadata.get("title", ""),
+                        "author": file_metadata.get("author", ""),
+                        "keywords": file_metadata.get("keywords", ""),
+                        "page_count": file_metadata.get("page_count", 0),
+                        "is_continuation": chunk_index > 0,
+                        "total_section_chunks": None
+                    },
+                    vector_id=unique_id
+                ))
+                chunk_index += 1
+            
+            start = end - self.chunk_overlap if end < text_length else text_length
+        
+        for chunk in chunks:
+            chunk.metadata["total_section_chunks"] = len(chunks)
+        
+        return chunks
+
+    def create_chunks(self, text: str, file_metadata: Dict[str, any]) -> List[Chunk]:
+        """Create text chunks using section-based strategy with overlap."""
+        all_chunks = []
+        
         file_name = file_metadata.get("file_name", "unknown")
         file_metadata = {**file_metadata, 'source': file_name, 'file_name': file_name}
-
-        # 1. Create metadata chunks (title, author, keywords)
+        
+        # 1. Create metadata chunks
         if file_metadata.get('title'):
             unique_id = str(uuid.uuid4())
-            text_chunks.append(Chunk(
+            all_chunks.append(Chunk(
                 text=file_metadata['title'].strip(),
                 metadata={
-                    **file_metadata,
+                    **{k: v for k, v in file_metadata.items() if k != 'page_markers'},
                     'section': 'Title',
-                    'chunk_index': len(text_chunks),
+                    'page': 1,
+                    'chunk_index': len(all_chunks),
                     'vector_id': unique_id
-                }
+                },
+                vector_id=unique_id
             ))
 
         if file_metadata.get('author'):
             unique_id = str(uuid.uuid4())
-            text_chunks.append(Chunk(
+            all_chunks.append(Chunk(
                 text=file_metadata['author'].strip(),
                 metadata={
-                    **file_metadata,
+                    **{k: v for k, v in file_metadata.items() if k != 'page_markers'},
                     'section': 'Authors',
-                    'chunk_index': len(text_chunks),
+                    'page': 1,
+                    'chunk_index': len(all_chunks),
                     'vector_id': unique_id
-                }
+                },
+                vector_id=unique_id
+            ))
+        
+        if file_metadata.get('keywords'):
+            unique_id = str(uuid.uuid4())
+            all_chunks.append(Chunk(
+                text=file_metadata['keywords'].strip(),
+                metadata={
+                    **{k: v for k, v in file_metadata.items() if k != 'page_markers'},
+                    'section': 'Keywords',
+                    'page': 1,
+                    'chunk_index': len(all_chunks),
+                    'vector_id': unique_id
+                },
+                vector_id=unique_id
             ))
 
-        # 2. Detect and chunk major sections
-        detected_sections = self.detect_sections(text)
-        processed_text = ""
+        # 2. Find all section boundaries
+        sections = self.find_all_sections(text)
+        
+        if not sections:
+            # No sections found - treat entire text as "Content"
+            logger.warning("⚠️ No sections detected, using entire text as 'Content'")
+            section_chunks = self.create_overlapping_chunks(
+                text.strip(),
+                "Content",
+                file_metadata,
+                0
+            )
+            for chunk in section_chunks:
+                chunk.metadata['chunk_index'] = len(all_chunks)
+                all_chunks.append(chunk)
+        else:
+            # Process text section by section
+            for i in range(len(sections)):
+                start_pos, header_end_pos, section_name = sections[i]
+                
+                # Determine where this section ends
+                if i < len(sections) - 1:
+                    end_pos = sections[i + 1][0]  # Start of next section
+                else:
+                    end_pos = len(text)  # End of document
+                
+                # Extract section content (skip the header itself)
+                section_text = text[header_end_pos:end_pos].strip()
+                
+                if section_text and len(section_text) > 50:  # Only process substantial content
+                    section_chunks = self.create_overlapping_chunks(
+                        section_text,
+                        section_name,
+                        file_metadata,
+                        header_end_pos
+                    )
+                    
+                    for chunk in section_chunks:
+                        chunk.metadata['chunk_index'] = len(all_chunks)
+                        all_chunks.append(chunk)
+                    
+                    logger.info(f"✅ '{section_name}': {len(section_text)} chars → {len(section_chunks)} chunks")
 
-        for section_name, section_text in detected_sections.items():
-            # Create chunks from section text
-            if len(section_text) <= max_chunk_size:
-                unique_id = str(uuid.uuid4())
-                text_chunks.append(Chunk(
-                    text=section_text,
-                    metadata={
-                        **file_metadata,
-                        'section': section_name,
-                        'chunk_index': len(text_chunks),
-                        'vector_id': unique_id
-                    }
-                ))
-            else:
-                # Split large sections into multiple chunks
-                start = 0
-                chunk_num = 0
-                while start < len(section_text):
-                    end = min(start + max_chunk_size, len(section_text))
-                    chunk_text = section_text[start:end].strip()
-                    if chunk_text:
-                        unique_id = str(uuid.uuid4())
-                        text_chunks.append(Chunk(
-                            text=chunk_text,
-                            metadata={
-                                **file_metadata,
-                                'section': section_name,
-                                'chunk_index': len(text_chunks),
-                                'vector_id': unique_id
-                            }
-                        ))
-                        chunk_num += 1
-                    start = end
+        sections_found = set(chunk.metadata['section'] for chunk in all_chunks)
+        logger.info(f"📊 Created {len(all_chunks)} chunks across {len(sections_found)} sections: {', '.join(sorted(sections_found))}")
+        
+        return all_chunks
 
-            processed_text += section_text + "\n\n"
-
-        # 3. Handle remaining text (not matched to major sections)
-        # Split into paragraphs and create chunks
-        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip() and p not in processed_text]
-        for para in paragraphs:
-            if len(para) <= max_chunk_size:
-                unique_id = str(uuid.uuid4())
-                text_chunks.append(Chunk(
-                    text=para,
-                    metadata={
-                        **file_metadata,
-                        'section': 'Content',  # Generic section for unmatched paragraphs
-                        'chunk_index': len(text_chunks),
-                        'vector_id': unique_id
-                    }
-                ))
-            else:
-                # Split large paragraphs
-                start = 0
-                while start < len(para):
-                    end = min(start + max_chunk_size, len(para))
-                    chunk_text = para[start:end].strip()
-                    if chunk_text:
-                        unique_id = str(uuid.uuid4())
-                        text_chunks.append(Chunk(
-                            text=chunk_text,
-                            metadata={
-                                **file_metadata,
-                                'section': 'Content',
-                                'chunk_index': len(text_chunks),
-                                'vector_id': unique_id
-                            }
-                        ))
-                    start += max_chunk_size
-
-        logger.info(f"Created {len(text_chunks)} chunks with {len(detected_sections)} detected sections")
-        return text_chunks
-
-
-    # -----------------------------------------------------------
     def process_pdf(self, file_path: str) -> List[Chunk]:
         """Extract text and create chunks from a single PDF."""
-        logger.info(f"Processing PDF: {os.path.basename(file_path)}")
+        logger.info(f"📖 Processing PDF: {os.path.basename(file_path)}")
         text, metadata = self.extract_text_from_pdf(file_path)
+        
+        if not text:
+            logger.warning(f"⚠️ No text extracted from {file_path}")
+            return []
+        
+        return self.create_chunks(text, metadata)
+
+    def process_pdf_bytes(self, pdf_bytes: bytes, file_name: str = "uploaded.pdf") -> List[Chunk]:
+        """Extract text and create chunks from PDF bytes (for uploads)."""
+        logger.info(f"📖 Processing uploaded PDF: {file_name}")
+        text, metadata = self.extract_text_from_bytes(pdf_bytes, file_name)
+        
+        if not text:
+            logger.warning(f"⚠️ No text extracted from uploaded PDF")
+            return []
+        
         return self.create_chunks(text, metadata)
 
     def process_directory(self, directory_path: str) -> List[Chunk]:
         """Process all PDFs in a directory."""
         all_chunks = []
-        for filename in os.listdir(directory_path):
-            if filename.lower().endswith('.pdf'):
-                file_path = os.path.join(directory_path, filename)
-                try:
-                    chunks = self.process_pdf(file_path)
-                    all_chunks.extend(chunks)
-                    logger.info(f"Processed {filename}: {len(chunks)} chunks created")
-                except Exception as e:
-                    logger.error(f"Error processing {filename}: {str(e)}")
+        pdf_files = [f for f in os.listdir(directory_path) if f.lower().endswith('.pdf')]
+        
+        logger.info(f"📁 Found {len(pdf_files)} PDF files in {directory_path}")
+        
+        for filename in pdf_files:
+            file_path = os.path.join(directory_path, filename)
+            try:
+                chunks = self.process_pdf(file_path)
+                all_chunks.extend(chunks)
+                logger.info(f"✅ {filename}: {len(chunks)} chunks created")
+            except Exception as e:
+                logger.error(f"❌ Error processing {filename}: {str(e)}")
+        
+        logger.info(f"🎉 Total chunks from all files: {len(all_chunks)}")
         return all_chunks
-
-
