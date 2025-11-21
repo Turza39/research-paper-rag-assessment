@@ -1,22 +1,22 @@
 """
 Service for generating embeddings and answers using sentence-transformers and Gemini.
+Includes hallucination prevention and out-of-context query handling.
 """
 import os
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Any
 from dotenv import load_dotenv
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 from src.models.paper import Chunk
 import json
-from typing import List, Dict, Any
-from src.models.paper import Chunk
-import google.generativeai as genai
-import os
 import re
-
+import logging
 
 # Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
 
 class EmbeddingService:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
@@ -45,6 +45,7 @@ class EmbeddingService:
     async def generate_answer(self, query: str, relevant_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Generate answer using Gemini and return structured JSON including only used chunks as citations.
+        Includes hallucination prevention with strict context requirements.
         """
         # Prepare context string
         context = "\n\n".join([
@@ -55,38 +56,46 @@ class EmbeddingService:
             for chunk in relevant_chunks
         ])
 
-        # Construct prompt for JSON
+        # Construct enhanced prompt with hallucination prevention
         prompt = f"""
-    You are a research assistant. Answer the question using ONLY the provided context. 
-    Return your output strictly as a JSON object in the following format:
+You are a research assistant powered by Retrieval Augmented Generation (RAG).
 
-    {{
-        "answer": "...",                 
-        "citations": [
-            {{
-                "paper_title": "...", ** give paper title, not file name
-                "section": "...",
-                "page": 1,
-                "relevance_score": 0.0
-            }}
-        ],
-        "sources_used": ["..."],          
-        "confidence": 0.0
-    }}
+**CRITICAL INSTRUCTIONS - Must Follow Strictly:**
+1. Answer ONLY using information from the provided context.
+2. DO NOT add any information not explicitly stated in the context.
+3. DO NOT speculate, assume, or infer beyond what is provided.
+4. If the answer cannot be found in the context, say "I couldn't find this information in the provided papers."
+5. Always cite the source paper, section, and page number for every claim.
 
-    Context chunks:
-    {context}
+Return your output strictly as a JSON object with this exact format:
 
-    Question: {query}
+{{
+    "answer": "Your answer here",                 
+    "citations": [
+        {{
+            "paper_title": "Paper Title (not filename)",
+            "section": "Section Name",
+            "page": 1,
+            "relevance_score": 0.95
+        }}
+    ],
+    "sources_used": ["paper1.pdf", "paper2.pdf"],          
+    "confidence": 0.9,
+    "found_relevant_info": true
+}}
 
-    Instructions:
-    1. Only use information from the context.
-    2. Include a citation only if you used that chunk to generate your answer.
-    3. Provide relevance_score for each citation (0-1).
-    4. List sources_used as the unique filenames you referenced.
-    5. Provide an overall confidence score (0-1).
-    6. No need to be too much strict about the relavancy. 
-    """
+Context chunks from papers:
+{context}
+
+User Question: {query}
+
+Guidelines:
+- Set found_relevant_info to false if the context doesn't adequately address the query
+- Confidence score should reflect how well the context answers the question (0-1)
+- Include a citation only for chunks you actually used in the answer
+- If multiple sources address the question, cite all of them
+- Be honest about limitations in the provided context
+"""
 
         # Call Gemini
         response = self.gemini.generate_content(prompt)
@@ -98,13 +107,15 @@ class EmbeddingService:
         # Parse JSON safely
         try:
             json_output = json.loads(text)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to parse JSON response: {e}")
             json_output = {
                 "answer": text,
                 "citations": [],
                 "sources_used": list({chunk.get("metadata", {}).get("file_name", "unknown") 
                                     for chunk in relevant_chunks}),
-                "confidence": 0.0
+                "confidence": 0.5,
+                "found_relevant_info": False
             }
 
         # Ensure sources_used is always set
@@ -112,5 +123,53 @@ class EmbeddingService:
             json_output["sources_used"] = list({chunk.get("metadata", {}).get("file_name", "unknown") 
                                             for chunk in relevant_chunks})
 
+        # Add flag for hallucination detection
+        if "found_relevant_info" not in json_output:
+            json_output["found_relevant_info"] = json_output.get("confidence", 0.5) > 0.4
+
         return json_output
+
+    async def handle_out_of_context_query(self, query: str, category: str) -> Dict[str, Any]:
+        """
+        Handle queries that are out of research context (greetings, meta questions).
+        
+        Args:
+            query: User query
+            category: Category of out-of-context query (greeting, casual, meta)
+        
+        Returns:
+            Appropriate response based on category
+        """
+        responses = {
+            "greeting": (
+                "Hello! I'm your Research Paper Assistant. I'm here to help you explore and understand "
+                "the research papers you've uploaded. You can ask me about specific sections, request summaries, "
+                "or get explanations about concepts. What would you like to know?"
+            ),
+            "casual": (
+                "I appreciate that! I'm here and ready to help you with your research papers. "
+                "What aspect of the papers would you like to discuss?"
+            ),
+            "meta": (
+                "I'm a Research Paper RAG Assistant. Here's what I can do:\n"
+                "• Find information in specific sections (abstract, methodology, results, conclusion, etc.)\n"
+                "• Summarize papers or specific sections\n"
+                "• Compare content across multiple papers\n"
+                "• Explain complex concepts from the papers\n"
+                "• Translate or simplify technical content\n"
+                "• Extract key findings and citations\n\n"
+                "Just ask me anything about your uploaded research papers!"
+            ),
+        }
+
+        answer = responses.get(category, responses["greeting"])
+
+        return {
+            "answer": answer,
+            "citations": [],
+            "sources_used": [],
+            "confidence": 1.0,
+            "found_relevant_info": True,
+            "is_out_of_context": True
+        }
     

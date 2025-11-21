@@ -102,7 +102,12 @@ function App() {
                     console.log('✅ General chat history loaded:', response.data);
 
                     if (Array.isArray(response.data) && response.data.length > 0) {
-                        const formattedMessages = response.data.flatMap(entry => {
+                        // Sort by timestamp ascending (oldest first)
+                        const sortedData = [...response.data].sort((a, b) => 
+                            new Date(a.timestamp) - new Date(b.timestamp)
+                        );
+
+                        const formattedMessages = sortedData.flatMap(entry => {
                             const userMsg = {
                                 role: 'user',
                                 content: entry.question,
@@ -113,6 +118,7 @@ function App() {
                                 role: 'assistant',
                                 content: entry.answer,
                                 responseTime: entry.response_time?.toFixed(2),
+                                response_time_ms: entry.response_time_ms,
                                 timestamp: entry.timestamp,
                                 entryId: entry.id,
                             };
@@ -144,7 +150,12 @@ function App() {
                     console.log('✅ Research chat history loaded:', response.data);
 
                     if (Array.isArray(response.data) && response.data.length > 0) {
-                        const formattedMessages = response.data.flatMap(entry => {
+                        // Sort by timestamp ascending (oldest first)
+                        const sortedData = [...response.data].sort((a, b) => 
+                            new Date(a.timestamp) - new Date(b.timestamp)
+                        );
+
+                        const formattedMessages = sortedData.flatMap(entry => {
                             const userMsg = {
                                 role: 'user',
                                 content: entry.question,
@@ -155,6 +166,7 @@ function App() {
                                 role: 'assistant',
                                 content: entry.answer,
                                 responseTime: entry.response_time?.toFixed(2),
+                                response_time_ms: entry.response_time_ms,
                                 timestamp: entry.timestamp,
                                 citations: entry.citations || [],
                                 papers_referenced: entry.papers_referenced || [],
@@ -291,6 +303,7 @@ function App() {
                     role: 'assistant',
                     content: response.data.answer,
                     responseTime: (responseTimeMs / 1000).toFixed(2),
+                    response_time_ms: responseTimeMs,
                     timestamp: new Date().toISOString(),
                     citations: response.data.citations,
                     sources_used: response.data.sources_used,
@@ -330,6 +343,7 @@ function App() {
                     role: 'assistant',
                     content: response.data.answer,
                     responseTime: (responseTimeMs / 1000).toFixed(2),
+                    response_time_ms: responseTimeMs,
                     timestamp: new Date().toISOString(),
                     citations: response.data.citations,
                     sources_used: response.data.sources_used,

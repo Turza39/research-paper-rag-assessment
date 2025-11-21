@@ -207,8 +207,13 @@ function ChatConsole({
                                         {message.responseTime && (
                                             <div className="message-footer">
                                                 <span className="response-time">
-                                                    ⏱️ {message.responseTime}s
+                                                    ⏱️ Response: {message.response_time_ms ? `${message.response_time_ms.toFixed(0)}ms` : `${message.responseTime}s`}
                                                 </span>
+                                                {message.timestamp && (
+                                                    <span className="message-timestamp">
+                                                        📅 {new Date(message.timestamp).toLocaleString()}
+                                                    </span>
+                                                )}
                                             </div>
                                         )}
                                     </div>

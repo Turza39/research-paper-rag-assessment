@@ -1,5 +1,6 @@
 """
 API routes for the research paper RAG system.
+Enhanced with context awareness, metadata tracking, and improved query handling.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from src.models.api import QueryRequest, QueryResponse, ErrorResponse
@@ -42,31 +43,53 @@ async def query_papers(
 ):
     """
     Process a query against research papers.
-    Stores both general query history (for analytics) and research-specific chat history (for display).
+    Features:
+    - Context-aware query classification
+    - Hallucination prevention
+    - Section-specific retrieval
+    - Low-confidence handling with clarification prompts
+    - Comprehensive metadata tracking for analytics
     """
-    start_time = time()
-    
     try:
         logger.info(f"📥 Received query: {query_request.model_dump()}")
         
-        # Process query through RAG pipeline
+        # Process query through enhanced RAG pipeline
         response = await pipeline.query(
             query_text=query_request.question,
             paper_filter=query_request.expected_papers
         )
-        response_time = time() - start_time
 
-        logger.info(f"✅ Query successful in {response_time:.2f}s")
+        logger.info(f"✅ Query processed successfully")
+        logger.debug(f"Response metadata - Context: {response.context_level}, Query Type: {response.query_type}")
 
-        # ✅ Store in general query history (for analytics)
+        # ✅ Store comprehensive analytics metadata
         try:
+            # Store in general query history (for analytics)
+            analytics_entry = {
+                "question": query_request.question,
+                "answer": response.answer,
+                "response_time_ms": response.response_time_ms,
+                "papers_referenced": response.sources_used,
+                "citations_count": len(response.citations),
+                # Enhanced metadata
+                "context_score": response.context_score,
+                "context_level": response.context_level,
+                "query_type": response.query_type,
+                "detected_section": response.detected_section,
+                "is_out_of_context": response.is_out_of_context,
+                "clarification_needed": response.clarification_needed,
+                "confidence": response.confidence,
+                "retrieval_count": response.retrieval_count,
+            }
+            
             await mongodb.store_general_chat_entry(
                 question=query_request.question,
                 answer=response.answer,
-                response_time=response_time,
-                papers_referenced=response.sources_used
+                response_time=response.response_time_ms / 1000.0 if response.response_time_ms else 0.0,
+                papers_referenced=response.sources_used,
+                metadata=analytics_entry  # Store all metadata
             )
-            logger.info("✅ Stored in general query history")
+            logger.info("✅ Stored in general query history with metadata")
         except Exception as e:
             logger.warning(f"⚠️ Failed to store general query: {str(e)}")
 
@@ -81,11 +104,18 @@ async def query_papers(
                     papers_referenced=response.sources_used,
                     citations=[c.model_dump() for c in response.citations],
                     sources_used=response.sources_used,
-                    response_time=response_time,
+                    response_time=response.response_time_ms / 1000.0 if response.response_time_ms else 0.0,
+                    response_time_ms=response.response_time_ms,
                     confidence=response.confidence,
                     query_type=query_request.type.value,
                     difficulty=query_request.difficulty.value,
-                    success=True
+                    success=True,
+                    context_score=response.context_score,
+                    context_level=response.context_level,
+                    detected_section=response.detected_section,
+                    is_out_of_context=response.is_out_of_context,
+                    clarification_needed=response.clarification_needed,
+                    retrieval_count=response.retrieval_count
                 )
                 logger.info(f"✅ Stored in research chat history for {query_request.research_id}")
             except Exception as e:
@@ -94,22 +124,7 @@ async def query_papers(
         return response
 
     except Exception as e:
-        response_time = time() - start_time
-        logger.error(f"❌ Query failed: {str(e)}")
-        
-        # Store failed query in general history
-        try:
-            await mongodb.store_query({
-                "question": query_request.question,
-                "papers_referenced": [],
-                "response_time": response_time,
-                "query_type": query_request.type.value,
-                "difficulty": query_request.difficulty.value,
-                "success": False,
-                "error_message": str(e)
-            })
-        except:
-            pass
+        logger.error(f"❌ Query failed: {str(e)}", exc_info=True)
         
         raise HTTPException(
             status_code=500,

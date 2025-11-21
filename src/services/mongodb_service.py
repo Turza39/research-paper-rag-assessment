@@ -265,7 +265,8 @@ class MongoDBService:
         question: str,
         answer: str,
         response_time: float,
-        papers_referenced: List[str]
+        papers_referenced: List[str],
+        metadata: Dict[str, Any] = None
     ) -> str:
         """Store general chat entry in query_history collection."""
         try:
@@ -280,6 +281,9 @@ class MongoDBService:
                 "success": True,
                 "user_rating": None
             }
+            # Merge metadata if provided
+            if metadata:
+                query_entry.update(metadata)
             
             result = await self.query_history.insert_one(query_entry)
             logger.info(f"✅ Stored general chat entry: {result.inserted_id}")
@@ -334,15 +338,27 @@ class MongoDBService:
         papers_referenced: List[str],
         citations: List[Dict[str, Any]],
         sources_used: List[str],
-        response_time: float,
+        response_time: float = 0.0,
         confidence: float = 0.0,
         query_type: str = "single-paper",
         difficulty: str = "medium",
         success: bool = True,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        context_score: float = 0.0,
+        context_level: str = "medium",
+        detected_section: Optional[str] = None,
+        is_out_of_context: bool = False,
+        clarification_needed: bool = False,
+        retrieval_count: int = 0,
+        response_time_ms: Optional[float] = None,
+        **kwargs
     ) -> str:
         """Store research chat entry in research_chat_history collection."""
         try:
+            # Convert response_time_ms to seconds if provided
+            if response_time_ms is not None and response_time == 0.0:
+                response_time = response_time_ms / 1000.0
+            
             chat_entry = {
                 "research_id": research_id,
                 "research_name": research_name,
@@ -352,14 +368,25 @@ class MongoDBService:
                 "citations": citations,
                 "sources_used": sources_used,
                 "response_time": response_time,
+                "response_time_ms": response_time_ms,
                 "confidence": confidence,
                 "timestamp": datetime.now(timezone.utc),
                 "query_type": query_type,
                 "difficulty": difficulty,
                 "success": success,
                 "error_message": error_message,
-                "user_rating": None
+                "user_rating": None,
+                "context_score": context_score,
+                "context_level": context_level,
+                "detected_section": detected_section,
+                "is_out_of_context": is_out_of_context,
+                "clarification_needed": clarification_needed,
+                "retrieval_count": retrieval_count
             }
+            # Accept any additional kwargs and merge them
+            for key, value in kwargs.items():
+                if key not in chat_entry:
+                    chat_entry[key] = value
             
             result = await self.research_chat_history.insert_one(chat_entry)
             logger.info(f"✅ Stored research chat entry: {result.inserted_id}")

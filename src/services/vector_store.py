@@ -3,7 +3,6 @@ Service for managing vector storage using Qdrant.
 Requires Qdrant running in Docker: docker run -p 6333:6333 qdrant/qdrant
 """
 import logging
-import logging
 from qdrant_client.http import models as qmodels
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
@@ -42,7 +41,9 @@ class VectorStore:
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
             )
-
+            logger.info(f"✅ Created collection: {self.collection_name}")
+        else:
+            logger.info(f"📦 Collection already exists: {self.collection_name}")
 
     def store_vectors(self, chunks: List[Chunk], vectors: List[List[float]]) -> List[str]:
         """Store chunks and their vector embeddings into Qdrant."""
@@ -80,9 +81,9 @@ class VectorStore:
                     collection_name=self.collection_name,
                     points=points
                 )
-                logger.info(f"Stored batch of {len(points)} vectors successfully")
+                logger.info(f"✅ Stored batch of {len(points)} vectors successfully")
             except Exception as e:
-                logger.error(f"Error storing vectors: {str(e)}")
+                logger.error(f"❌ Error storing vectors: {str(e)}")
                 raise
 
         return vector_ids
@@ -116,18 +117,20 @@ class VectorStore:
                 ]
             )
             logger.info(f"📁 Using flexible filter on both file_name & source: {paper_filter}")
+        
         try:
-            results = self.client.search(
+            # ✅ FIXED: Use query_points() instead of search()
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=limit,
-                query_filter=query_filter
-            )
+                query=query_vector,
+                query_filter=query_filter,
+                limit=limit
+            ).points  # ✅ Access .points attribute
+            
+            logger.info(f"✅ Qdrant returned {len(results)} hits")
         except Exception as e:
             logger.error(f"❌ Qdrant search failed: {e}", exc_info=True)
             return []
-
-        logger.info(f"✅ Qdrant returned {len(results)} hits")
 
         formatted_results = []
         for i, hit in enumerate(results):
